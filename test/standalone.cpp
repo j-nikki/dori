@@ -2,7 +2,7 @@
 // Tests for syntax errors, missing headers, etc.
 //
 
-#include <dori.h>
+#include <dori/all.h>
 
 int main()
 {

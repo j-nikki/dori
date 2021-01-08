@@ -1,4 +1,4 @@
-#include <dori.h>
+#include <dori/all.h>
 #include <numeric>
 #include <optional>
 
