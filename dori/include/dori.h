@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <boost/align/aligned_allocator.hpp>
 #include <memory>
+#include <stdexcept>
 #include <tuple>
 
 namespace dori
@@ -121,7 +122,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
 
   public:
     //
-    // DEFAULT OPERATIONS
+    // Member functions
     //
 
     inline vector_impl() noexcept : al_() {}
@@ -140,7 +141,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         sz_  = other.sz_;
         p_   = al_.allocate(cap_ * Sz_all);
         try {
-            (std::uninitialized_copy_n(other.get<Is>(), sz_, get<Is>()), ...);
+            (std::uninitialized_copy_n(other.data<Is>(), sz_, data<Is>()), ...);
         } catch (...) {
             al_.deallocate(p_, cap_ * Sz_all);
             throw;
@@ -159,43 +160,87 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         return *this;
     }
 
-    inline void swap(vector_impl &other)
-    {
-        std::swap(p_, other.p_);
-        std::swap(sz_, other.sz_);
-        std::swap(cap_, other.cap_);
-    }
-
     inline ~vector_impl()
     {
         if (p_) {
             for (auto j = sz_; j--;)
-                (std::destroy_at(&get<Is>()[j]), ...);
+                (std::destroy_at(&data<Is>()[j]), ...);
             al_.deallocate(p_, cap_ * Sz_all);
         }
     }
 
+    inline Al get_allocator() const noexcept { return al_; }
+
     //
-    // MODIFIERS
+    // Element access
     //
 
-    iterator erase(const_iterator first, const_iterator last) noexcept(false)
+    inline reference operator[](std::size_t i)
     {
-        auto f_idx           = sz_ + first.i;
-        auto l_idx           = sz_;
-        auto shift           = last.i - first.i;
-        const auto operation = [&]<class T>(T *f, T *l) {
-            // std::shift_left(f, l, shift);
-            std::destroy(f + shift, l);
-            return f;
-        };
-        return {std::tuple{operation(get<Is>() + f_idx, get<Is>() + l_idx)...},
-                -static_cast<intptr_t>(sz_ -= shift)};
+        return {Ith_arr<Is>(p_, cap_)[i]...};
     }
-    inline iterator erase(const_iterator pos)
+
+    inline const_reference operator[](std::size_t i) const
     {
-        return erase(pos, std::next(pos, 1));
+        return {Ith_arr<Is>(p_, cap_)[i]...};
     }
+
+    inline reference at(std::size_t i)
+    {
+        if (i >= sz_)
+            throw std::out_of_range{"dori::vector::at"};
+        return operator[](i);
+    }
+
+    inline const_reference at(std::size_t i) const
+    {
+        if (i >= sz_)
+            throw std::out_of_range{"dori::vector::at"};
+        return operator[](i);
+    }
+
+    reference front() { return *begin(); }
+    const_reference front() const { return *begin(); }
+
+    reference back() { return *operator[](sz_ - 1); }
+    const_reference back() const { return *operator[](sz_ - 1); }
+
+    template <std::size_t I>
+    inline Elem<I> *data() noexcept
+    {
+        return Ith_arr<I>(p_, cap_);
+    }
+
+    template <std::size_t I>
+    inline const Elem<I> *data() const noexcept
+    {
+        return Ith_arr<I>(p_, cap_);
+    }
+
+    //
+    // Iterators
+    //
+
+    inline iterator begin() noexcept
+    {
+        return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
+    }
+    inline const_iterator begin() const noexcept
+    {
+        return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
+    }
+    inline const_iterator cbegin() const noexcept { return begin(); }
+
+    inline End_iterator cend() const noexcept { return {}; }
+    inline End_iterator end() const noexcept { return {}; }
+
+    //
+    // Capacity
+    //
+
+    inline std::size_t size() const noexcept { return sz_; }
+    inline std::size_t capacity() const noexcept { return cap_; }
+    inline bool empty() const noexcept { return !sz_; }
 
     inline void reserve(std::size_t cap)
     {
@@ -208,10 +253,10 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
             Re_alloc(cap);
     }
 
-    inline std::enable_if_t<(std::is_default_constructible_v<Ts> && ...)>
-    resize(std::size_t sz) noexcept(
+    inline void resize(std::size_t sz) noexcept(
         std::conjunction_v<std::is_nothrow_destructible<Ts>...>
-            &&std::conjunction_v<std::is_nothrow_default_constructible<Ts>...>)
+            &&std::conjunction_v<std::is_nothrow_default_constructible<
+                Ts>...>) requires(std::is_default_constructible_v<Ts> &&...)
     {
         if (sz > sz_)
             Shrink_or_extend_at<false>(sz_, sz);
@@ -220,121 +265,103 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         sz_ = sz;
     }
 
-    template <class Tuple, std::enable_if_t<Is_tuple<Tuple>::value, int> = 0>
-    inline void push_back(Tuple &&xs) noexcept(
-        std::conjunction_v<std::is_nothrow_constructible<
-            Ts, std::tuple_element_t<Is, Tuple>>...>)
+    inline void swap(vector_impl &other) noexcept
     {
-        push_back(std::get<Is>(std::forward<Tuple>(xs))...);
+        std::swap(p_, other.p_);
+        std::swap(sz_, other.sz_);
+        std::swap(cap_, other.cap_);
+    }
+
+    //
+    // Modifiers
+    //
+
+    iterator erase(const_iterator first, const_iterator last)
+    {
+        const auto f_idx     = sz_ + first.i;
+        const auto shift     = last.i - first.i;
+        const auto operation = [&]<class T>(T *f, T *l) {
+            auto it = f;
+            std::for_each(f + shift, l, [&](T &x) { *it++ = std::move(x); });
+            std::destroy(it, l);
+            return f;
+        };
+        return {{operation(data<Is>() + f_idx, data<Is>() + sz_)...},
+                -static_cast<intptr_t>(sz_ -= shift)};
+    }
+
+    inline iterator erase(const_iterator pos)
+    {
+        return erase(pos, std::next(pos));
+    }
+
+    template <class Tpl>
+    requires Is_tuple<Tpl>::value //
+        inline void
+        push_back(Tpl &&xs) noexcept((std::is_nothrow_constructible_v<
+                                          Ts, std::tuple_element_t<Is, Tpl>> &&
+                                      ...))
+    {
+        push_back(std::get<Is>(static_cast<Tpl &&>(xs))...);
     }
 
     template <class... Us>
-    inline std::enable_if_t<sizeof...(Us) == sizeof...(Ts)>
-    push_back(Us &&...xs) noexcept(
-        Emplace_or_push_back_is_noexcept<false, Us...>::value)
+    requires(sizeof...(Us) == sizeof...(Ts)) //
+        inline void push_back(Us &&...xs) noexcept(
+            noexcept(Emplace_or_push_back<false>(static_cast<Us &&>(xs)...)))
     {
-        Emplace_or_push_back<false>(std::forward<Us>(xs)...);
+        Emplace_or_push_back<false>(static_cast<Us &&>(xs)...);
     }
 
     template <class... Us>
-    inline std::enable_if_t<sizeof...(Ts) == sizeof...(Us) &&
-                            (Is_tuple<Us>::value && ...)>
-    emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
-        Emplace_or_push_back_is_noexcept<true, Us...>::value)
+    requires(sizeof...(Ts) == sizeof...(Us) && (Is_tuple<Us>::value && ...)) //
+        inline void emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
+            noexcept(Emplace_or_push_back<true>(static_cast<Us &&>(xs)...)))
     {
-        Emplace_or_push_back<true>(std::forward<Us>(xs)...);
+        Emplace_or_push_back<true>(static_cast<Us &&>(xs)...);
     }
 
     template <class... Us>
-    inline std::enable_if_t<sizeof...(Ts) == sizeof...(Us)>
-    emplace_back(Us &&...xs) noexcept(
-        Emplace_or_push_back_is_noexcept<true, std::tuple<Us>...>::value)
+    requires(sizeof...(Ts) == sizeof...(Us)) //
+        inline void emplace_back(Us &&...xs) noexcept(
+            Emplace_or_push_back_is_noexcept<true, std::tuple<Us>...>::value)
     {
         emplace_back(std::piecewise_construct,
-                     std::tuple<Us>{std::forward<Us>(xs)}...);
+                     std::tuple<Us>{static_cast<Us &&>(xs)}...);
     }
-
-    //
-    // ACCESSORS
-    //
-
-    inline Al get_allocator() const noexcept { return al_; }
-
-    template <std::size_t I>
-    inline Elem<I> *get() noexcept
-    {
-        return Ith_arr<I>(p_, cap_);
-    }
-
-    template <std::size_t I>
-    inline const Elem<I> *get() const noexcept
-    {
-        return Ith_arr<I>(p_, cap_);
-    }
-
-    inline reference operator[](std::size_t i) noexcept
-    {
-        assert(i < sz_);
-        return At(i);
-    }
-
-    inline const_reference operator[](std::size_t i) const noexcept
-    {
-        assert(i < sz_);
-        return At(i);
-    }
-
-    inline std::size_t size() const noexcept { return sz_; }
-    inline std::size_t capacity() const noexcept { return cap_; }
-    inline bool empty() const noexcept { return !sz_; }
-
-    inline iterator begin() noexcept
-    {
-        return {{(get<Is>() + sz_)...}, -(intptr_t)sz_};
-    }
-    inline const_iterator begin() const noexcept
-    {
-        return {{(get<Is>() + sz_)...}, -(intptr_t)sz_};
-    }
-
-    inline const_iterator cbegin() const noexcept { return begin(); }
-
-    inline End_iterator end() noexcept { return {}; }
-    inline End_iterator cend() const noexcept { return {}; }
-    inline End_iterator end() const noexcept { return {}; }
 
   private:
     template <bool Shrink>
     inline void Shrink_or_extend_at(std::size_t a, std::size_t b) noexcept(
-        Shrink
-            ? std::conjunction_v<std::is_nothrow_destructible<Ts>...>
-            : std::conjunction_v<std::is_nothrow_default_constructible<Ts>...>)
+        Shrink ? (std::is_nothrow_destructible<Ts>::value &&...)
+               : (std::is_nothrow_default_constructible<Ts>::value &&...))
     {
-        const auto operation = []<class T>(T *first, T *last) {
+        (..., []<class T>(T *first, T *last) {
             if constexpr (Shrink)
                 std::destroy(first, last);
             else
                 std::uninitialized_default_construct(first, last);
-        };
-        (operation(get<Is>() + a, get<Is>() + b), ...);
+        }(data<Is>() + a, data<Is>() + b));
     }
 
     template <class, class Tuple,
               class = std::make_index_sequence<std::tuple_size_v<Tuple>>>
     struct Is_nothrow_emplaceable {
     };
-    template <class T, class Tuple, std::size_t... Is>
-    struct Is_nothrow_emplaceable<T, Tuple, std::index_sequence<Is...>>
-        : std::is_nothrow_constructible<T, std::tuple_element_t<Is, Tuple>...> {
+    template <class T, class Tuple, std::size_t... Js>
+    struct Is_nothrow_emplaceable<T, Tuple, std::index_sequence<Js...>>
+        : std::is_nothrow_constructible<T, std::tuple_element_t<Js, Tuple>...> {
     };
 
     template <bool Emplace, class... Us>
     struct Emplace_or_push_back_is_noexcept
-        : std::conjunction<Is_nothrow_emplaceable<Ts, std::decay_t<Us>>...> {
+        : std::bool_constant<(
+              Is_nothrow_emplaceable<Ts, std::decay_t<Us>>::value && ...)> {
     };
     template <class... Us>
     struct Emplace_or_push_back_is_noexcept<false, Us...>
-        : std::conjunction<std::is_nothrow_constructible<Ts, Us>...> {
+        : std::bool_constant<(std::is_nothrow_constructible<Ts, Us>::value &&
+                              ...)> {
     };
 
     template <bool Emplace, class... Us>
@@ -343,62 +370,54 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     {
         DORI_explicit_new_and_delete_begin assert(sz_ < cap_);
         (..., [&]<class T, class U>(T &dst, U &&x) {
-            auto addr = std::addressof(dst);
+            const auto addr = std::addressof(dst);
             assert((char *)addr >= p_);
             assert((char *)&addr[1] <= (char *)&p_[cap_ * Sz_all]);
             if constexpr (Emplace) {
                 std::apply(
-                    [&](auto &&...xs) {
-                        new (addr) T(std::forward<decltype(xs)>(xs)...);
+                    [&]<class... Vs>(Vs && ...xs) {
+                        new (addr) T(static_cast<Vs &&>(xs)...);
                     },
-                    std::forward<U>(x));
-            } else {
-                new (addr) T(std::forward<U>(x));
-            }
-        }(get<Is>()[sz_], std::forward<Us>(xs)));
+                    static_cast<U &&>(x));
+            } else
+                new (addr) T(static_cast<U &&>(x));
+        }(data<Is>()[sz_], static_cast<Us &&>(xs)));
         ++sz_;
         DORI_explicit_new_and_delete_end
     }
 
+    template <class T>
+    using Move_t = std::conditional_t<std::is_trivially_copy_constructible_v<T>,
+                                      T &, T &&>;
+
     inline void Re_alloc(std::size_t cap)
     {
         assert(cap >= sz_);
-        auto p             = al_.allocate(cap * Sz_all);
-        const auto resizer = [&]<class T>(T *first, T *dest) {
-            if constexpr (std::is_trivially_copy_constructible_v<T>)
-                std::uninitialized_copy_n(first, sz_, dest);
-            else
-                std::uninitialized_move_n(first, sz_, dest);
-            std::destroy_n(first, sz_);
-        };
-        (resizer(get<Is>(), Ith_arr<Is>(p, cap)), ...);
-        al_.deallocate(std::exchange(p_, p), std::exchange(cap_, cap) * Sz_all);
-    }
-
-    inline reference At(std::size_t i) noexcept
-    {
-        return std::tie(Ith_arr<Is>(p_, cap_)[i]...);
-    }
-
-    inline const_reference At(std::size_t i) const noexcept
-    {
-        return std::tie(Ith_arr<Is>(p_, cap_)[i]...);
+        auto p = al_.allocate(cap * Sz_all);
+        (..., [&]<class T>(T *f, T *d_f) {
+            std::for_each_n(f, sz_, [&](T &x) {
+                new (d_f++) T{static_cast<Move_t<T>>(x)};
+                x.~T();
+            });
+        }(data<Is>(), Ith_arr<Is>(p, cap)));
+        al_.deallocate(p_, cap_ * Sz_all);
+        p_   = p;
+        cap_ = cap;
     }
 
     template <std::size_t I, class T, class Rev = std::false_type>
     static constexpr auto Ith_arr(T *p, std::size_t cap, Rev = {}) noexcept
     {
-        constexpr std::size_t offset =
-            Get_offsets()[I] + (Rev::value ? sizeof(Elem<I>) : 0);
-        using ElemTy =
-            std::conditional_t<std::is_const_v<T>, const Elem<I>, Elem<I>>;
-
-        DORI_c_style_cast_begin return (ElemTy *)(&p[offset * cap]);
-        DORI_c_style_cast_end
+        using E      = Elem<I>;
+        using EConst = std::conditional_t<std::is_const_v<T>, const E, E>;
+        static constexpr auto offset =
+            Get_offsets()[I] + (Rev::value ? sizeof(E) : 0);
+        return reinterpret_cast<EConst *>(&p[offset * cap]);
     }
 
-    char *p_{};
-    std::size_t sz_{}, cap_{};
+    char *p_         = nullptr;
+    std::size_t sz_  = 0;
+    std::size_t cap_ = 0;
     DORI_use_no_unique_address_begin [[no_unique_address]] Al al_;
     DORI_use_no_unique_address_end
 };
@@ -416,8 +435,8 @@ struct vector_caster {
                       "vector dimensions must match");
 
         constexpr bool equal_type_sizes = [] {
-            auto sz1 = std::array{sizeof(Ts)...};
-            auto sz2 = std::array{sizeof(Us)...};
+            std::array sz1{sizeof(Ts)...};
+            std::array sz2{sizeof(Us)...};
             std::sort(sz1.begin(), sz1.end(), std::greater<>{});
             std::sort(sz2.begin(), sz2.end(), std::greater<>{});
             return std::equal(sz1.begin(), sz1.end(), sz2.begin(), sz2.end());

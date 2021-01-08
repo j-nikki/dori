@@ -1,5 +1,6 @@
 #include <dori.h>
 #include <numeric>
+#include <optional>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
@@ -98,6 +99,44 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ((uintptr_t)&i16 % alignof(int16_t), 0);
             REQUIRE_EQ((uintptr_t)&i8 % alignof(int8_t), 0);
         }
+    }
+
+    TEST_CASE("dori::vector::erase erases expectedly")
+    {
+        static std::size_t nctors = 0;
+        static std::size_t nmoves = 0;
+        static std::size_t ndtors = 0;
+        struct S {
+            S() { ++nctors; }
+            S(S&&) { ++nmoves; }
+            S &operator=(S &&) { return ++nmoves, *this; }
+            ~S() { ++ndtors; }
+        };
+        auto v = dori::vector<S>();
+        REQUIRE_EQ(v.size(), 0);
+        REQUIRE_EQ(nctors, 0);
+        REQUIRE_EQ(nmoves, 0);
+        REQUIRE_EQ(ndtors, 0);
+        v.reserve(8);
+        REQUIRE_EQ(v.size(), 0);
+        REQUIRE_EQ(nctors, 0);
+        REQUIRE_EQ(nmoves, 0);
+        REQUIRE_EQ(ndtors, 0);
+        v.resize(8);
+        REQUIRE_EQ(v.size(), 8);
+        REQUIRE_EQ(nctors, 8);
+        REQUIRE_EQ(nmoves, 0);
+        REQUIRE_EQ(ndtors, 0);
+        v.erase(v.begin(), std::next(v.begin(), 4));
+        REQUIRE_EQ(v.size(), 4);
+        REQUIRE_EQ(nctors, 8);
+        REQUIRE_EQ(nmoves, 4);
+        REQUIRE_EQ(ndtors, 4);
+        v.erase(v.begin(), v.end());
+        REQUIRE_EQ(v.size(), 0);
+        REQUIRE_EQ(nctors, 8);
+        REQUIRE_EQ(nmoves, 4);
+        REQUIRE_EQ(ndtors, 8);
     }
 
     TEST_CASE("dori::vector works with algorithms")
