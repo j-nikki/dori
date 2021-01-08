@@ -1,12 +1,13 @@
 ﻿#pragma once
 
+#include "detail/assert.h"
 #include "detail/opaque_vector.h"
+#include "detail/traits.h"
 #include "detail/vector_caster.h"
 #include "detail/vector_creator.h"
 
 #include <algorithm>
 #include <array>
-#include <assert.h>
 #include <boost/align/aligned_allocator.hpp>
 #include <memory>
 #include <stdexcept>
@@ -18,6 +19,12 @@ namespace dori
 
 namespace detail
 {
+
+template <class T>
+concept Tuple = requires
+{
+    typename std::tuple_size<T>;
+};
 
 template <class T>
 using Move_t =
@@ -51,7 +58,10 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 #define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_const_iterator          \
     std::tuple<const Ts *...>
 #define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_iterator                \
-    DORI_inline operator const_iterator() const noexcept { return {ptrs, i}; } \
+    constexpr DORI_inline operator const_iterator() const noexcept             \
+    {                                                                          \
+        return {ptrs, i};                                                      \
+    }                                                                          \
     std::tuple<Ts *...>
 
     struct End_iterator;
@@ -61,25 +71,28 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         using value_type        = vector_impl::value_type;                     \
         using reference         = vector_impl::reference;                      \
         using iterator_category = std::input_iterator_tag;                     \
-        DORI_inline It &operator++() noexcept { return ++i, *this; }           \
-        DORI_inline It operator++(int) noexcept { return {ptrs, i++}; }        \
-        DORI_inline Ref operator*() noexcept                                   \
+        constexpr DORI_inline It &operator++() noexcept { return ++i, *this; } \
+        constexpr DORI_inline It operator++(int) noexcept                      \
+        {                                                                      \
+            return {ptrs, i++};                                                \
+        }                                                                      \
+        constexpr DORI_inline Ref operator*() noexcept                         \
         {                                                                      \
             return {std::get<Is>(ptrs)[i]...};                                 \
         }                                                                      \
-        DORI_inline bool operator==(const It &it) const noexcept               \
+        constexpr DORI_inline bool operator==(const It &it) const noexcept     \
         {                                                                      \
             return i == it.i;                                                  \
         }                                                                      \
-        DORI_inline bool operator!=(const It &it) const noexcept               \
+        constexpr DORI_inline bool operator!=(const It &it) const noexcept     \
         {                                                                      \
             return i != it.i;                                                  \
         }                                                                      \
-        DORI_inline bool operator==(End_iterator) const noexcept               \
+        constexpr DORI_inline bool operator==(End_iterator) const noexcept     \
         {                                                                      \
             return i == 0;                                                     \
         }                                                                      \
-        DORI_inline bool operator!=(End_iterator) const noexcept               \
+        constexpr DORI_inline bool operator!=(End_iterator) const noexcept     \
         {                                                                      \
             return i != 0;                                                     \
         }                                                                      \
@@ -97,8 +110,11 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
   private:
     struct End_iterator {
-        DORI_inline operator iterator() const noexcept { return {.i = 0}; }
-        DORI_inline operator const_iterator() const noexcept
+        constexpr DORI_inline operator iterator() const noexcept
+        {
+            return {.i = 0};
+        }
+        constexpr DORI_inline operator const_iterator() const noexcept
         {
             return {.i = 0};
         }
@@ -109,13 +125,13 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Member functions
     //
 
-    DORI_inline vector_impl() noexcept : opaque_vector<Al>{} {}
-    DORI_inline
+    constexpr DORI_inline vector_impl() noexcept : opaque_vector<Al>{} {}
+    constexpr DORI_inline
     vector_impl(const Al &al) noexcept(noexcept(opaque_vector<Al>{al}))
         : opaque_vector<Al>{al}
     {
     }
-    DORI_inline vector_impl(vector_impl &&other) noexcept
+    constexpr DORI_inline vector_impl(vector_impl &&other) noexcept
         : opaque_vector<Al>{std::move(other.al_), other.p_, other.sz_,
                             other.cap_}
     {
@@ -123,7 +139,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         other.sz_  = 0;
         other.cap_ = 0;
     }
-    DORI_inline vector_impl(const vector_impl &other) : opaque_vector<Al>{other}
+    constexpr DORI_inline vector_impl(const vector_impl &other)
+        : opaque_vector<Al>{other}
     {
         p_ = Allocate(cap_ * Sz_all);
         (..., [&]<std::size_t I, class T>(const T *f, T *d_f) {
@@ -138,19 +155,19 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }.template operator()<Is>(other.data<Is>(), data<Is>()));
     }
 
-    DORI_inline vector_impl &operator=(const vector_impl &rhs)
+    constexpr DORI_inline vector_impl &operator=(const vector_impl &rhs)
     {
         vector_impl{rhs}.swap(*this);
         return *this;
     }
 
-    DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept
+    constexpr DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept
     {
         vector_impl{std::move(rhs)}.swap(*this);
         return *this;
     }
 
-    DORI_inline ~vector_impl()
+    constexpr DORI_inline ~vector_impl()
     {
         if (p_) {
             (..., [&]<class T>(T *f, T *l) {
@@ -161,98 +178,102 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }
     }
 
-    DORI_inline Al get_allocator() const noexcept { return al_; }
+    constexpr DORI_inline Al get_allocator() const noexcept { return al_; }
 
     //
     // Element access
     //
 
-    DORI_inline reference operator[](std::size_t i) noexcept
+    constexpr DORI_inline reference operator[](std::size_t i) noexcept
     {
-        assert(i < sz_);
-        return {Ith_arr<Is>(p_, cap_)[i]...};
+        DORI_assert(i < sz_);
+        return {reinterpret_cast<Ts *>(&p_[Ith_arr<Is>(cap_)])[i]...};
     }
 
-    DORI_inline const_reference operator[](std::size_t i) const noexcept
+    constexpr DORI_inline const_reference
+    operator[](std::size_t i) const noexcept
     {
-        assert(i < sz_);
-        return {Ith_arr<Is>(p_, cap_)[i]...};
+        DORI_assert(i < sz_);
+        return {reinterpret_cast<const Ts *>(&p_[Ith_arr<Is>(cap_)])[i]...};
     }
 
-    DORI_inline reference at(std::size_t i)
+    constexpr DORI_inline reference at(std::size_t i)
     {
         if (i >= sz_)
             throw std::out_of_range{"dori::vector::at"};
         return operator[](i);
     }
 
-    DORI_inline const_reference at(std::size_t i) const
+    constexpr DORI_inline const_reference at(std::size_t i) const
     {
         if (i >= sz_)
             throw std::out_of_range{"dori::vector::at"};
         return operator[](i);
     }
 
-    DORI_inline reference front() noexcept
+    constexpr DORI_inline reference front() noexcept
     {
-        assert(sz_ > 0);
+        DORI_assert(sz_ > 0);
         return *begin();
     }
-    DORI_inline const_reference front() const
+    constexpr DORI_inline const_reference front() const
     {
-        assert(sz_ > 0);
+        DORI_assert(sz_ > 0);
         return *begin();
     }
 
-    DORI_inline reference back()
+    constexpr DORI_inline reference back()
     {
-        assert(sz_ > 0);
+        DORI_assert(sz_ > 0);
         return *operator[](sz_ - 1);
     }
-    DORI_inline const_reference back() const
+    constexpr DORI_inline const_reference back() const
     {
-        assert(sz_ > 0);
+        DORI_assert(sz_ > 0);
         return *operator[](sz_ - 1);
     }
 
     template <std::size_t I>
-    DORI_inline Elem<I> *data() noexcept
+    constexpr DORI_inline auto data() noexcept
     {
-        return Ith_arr<I>(p_, cap_);
+        return reinterpret_cast<Elem<I> *>(p_ + Ith_arr<I>(cap_));
     }
 
     template <std::size_t I>
-    DORI_inline const Elem<I> *data() const noexcept
+    constexpr DORI_inline auto data() const noexcept
     {
-        return Ith_arr<I>(p_, cap_);
+        return reinterpret_cast<const Elem<I> *>(p_ + Ith_arr<I>(cap_));
     }
 
     //
     // Iterators
     //
 
-    DORI_inline iterator begin() noexcept
+    constexpr DORI_inline iterator begin() noexcept
     {
         return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
     }
-    DORI_inline const_iterator begin() const noexcept
+    constexpr DORI_inline const_iterator begin() const noexcept
     {
         return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
     }
-    DORI_inline const_iterator cbegin() const noexcept { return begin(); }
+    constexpr DORI_inline const_iterator cbegin() const noexcept
+    {
+        return begin();
+    }
 
-    DORI_inline End_iterator cend() const noexcept { return {}; }
-    DORI_inline End_iterator end() const noexcept { return {}; }
+    constexpr DORI_inline End_iterator cend() const noexcept { return {}; }
+    constexpr DORI_inline End_iterator end() const noexcept { return {}; }
 
     //
     // Capacity
     //
 
-    DORI_inline std::size_t size() const noexcept { return sz_; }
-    DORI_inline std::size_t capacity() const noexcept { return cap_; }
-    DORI_inline bool empty() const noexcept { return !sz_; }
+    constexpr DORI_inline std::size_t size() const noexcept { return sz_; }
+    constexpr DORI_inline std::size_t capacity() const noexcept { return cap_; }
+    constexpr DORI_inline bool empty() const noexcept { return !sz_; }
 
-    DORI_inline void reserve(std::size_t cap)
+    constexpr DORI_inline void reserve(std::size_t cap)
     {
         if (cap <= cap_)
             return;
@@ -263,7 +284,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
             Re_alloc(cap);
     }
 
-    DORI_inline void resize(std::size_t sz)
+    constexpr DORI_inline void resize(std::size_t sz)
     {
         if (sz > sz_) { // proposed exceeds current => extend
             (..., [&]<class T>(T *f, T *l) {
@@ -279,7 +300,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         sz_ = sz;
     }
 
-    DORI_inline void swap(vector_impl &other) noexcept
+    constexpr DORI_inline void swap(vector_impl &other) noexcept
     {
         std::swap(p_, other.p_);
         std::swap(sz_, other.sz_);
@@ -290,7 +311,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modifiers
     //
 
-    DORI_inline iterator erase(const_iterator first, const_iterator last)
+    constexpr DORI_inline iterator erase(const_iterator first,
+                                         const_iterator last)
     {
         const auto f_i = sz_ + first.i;
         const auto n   = last.i - first.i;
@@ -304,45 +326,50 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                 -static_cast<intptr_t>(sz_ -= n)};
     }
 
-    DORI_inline iterator erase(const_iterator pos)
+    constexpr DORI_inline iterator erase(const_iterator pos)
     {
         return erase(pos, std::next(pos));
     }
 
-    template <class Tpl>
-    requires Is_tuple<Tpl>::value //
-        DORI_inline void
-        push_back(Tpl &&xs) noexcept((std::is_nothrow_constructible_v<
-                                          Ts, std::tuple_element_t<Is, Tpl>> &&
-                                      ...))
-    {
-        push_back(std::get<Is>(static_cast<Tpl &&>(xs))...);
-    }
-
     template <class... Us>
-    requires(sizeof...(Us) == sizeof...(Ts)) //
-        DORI_inline void push_back(Us &&...xs) noexcept(
-            noexcept(Emplace_or_push_back<false>(static_cast<Us &&>(xs)...)))
-    {
-        Emplace_or_push_back<false>(static_cast<Us &&>(xs)...);
-    }
-
-    template <class... Us>
-    requires(sizeof...(Ts) == sizeof...(Us) && (Is_tuple<Us>::value && ...)) //
-        DORI_inline
-        void emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
-            noexcept(Emplace_or_push_back<true>(static_cast<Us &&>(xs)...)))
-    {
-        Emplace_or_push_back<true>(static_cast<Us &&>(xs)...);
-    }
-
-    template <class... Us>
-    requires(sizeof...(Ts) == sizeof...(Us)) //
-        DORI_inline void emplace_back(Us &&...xs) noexcept(
-            Emplace_or_push_back_is_noexcept<true, std::tuple<Us>...>::value)
+    requires((std::is_constructible_v<Ts, Us &&> && ...) &&
+             sizeof...(Us) == sizeof...(Ts)) //
+        constexpr DORI_inline void push_back(Us &&...xs) noexcept(noexcept(
+            emplace_back(std::piecewise_construct,
+                         std::tuple<Us &&>{static_cast<Us &&>(xs)}...)))
     {
         emplace_back(std::piecewise_construct,
-                     std::tuple<Us>{static_cast<Us &&>(xs)}...);
+                     std::tuple<Us &&>{static_cast<Us &&>(xs)}...);
+    }
+
+    constexpr DORI_inline void push_back(const value_type &value) noexcept(
+        noexcept(push_back(std::get<Is>(value)...)))
+    {
+        push_back(std::get<Is>(value)...);
+    }
+
+    template <Tuple... Us>
+    requires(sizeof...(Ts) == sizeof...(Us)) //
+        constexpr DORI_inline iterator
+        emplace_back(std::piecewise_construct_t,
+                     Us &&...xs) /*noexcept(
+(noexcept(Emplacer(al_, &data<Is>()[sz_], static_cast<Us &&>(xs))) && ...)))*/
+    {
+        DORI_assert(sz_ < cap_);
+        const std::tuple ptrs{&data<Is>()[sz_]...};
+        (Emplacer(al_, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
+        return {{std::get<Is>(ptrs)...}, -static_cast<intptr_t>(sz_++)};
+    }
+
+    template <class U1, class... Us>
+    requires(!std::is_same_v<std::piecewise_construct_t, U1> &&
+             sizeof...(Ts) + 1 == sizeof...(Us)) //
+        constexpr DORI_inline iterator emplace_back(Us &&...xs) noexcept(
+            noexcept(emplace_back(std::piecewise_construct,
+                                  std::tuple<Us>{static_cast<Us &&>(xs)}...)))
+    {
+        return emplace_back(std::piecewise_construct,
+                            std::tuple<Us &&>{static_cast<Us &&>(xs)}...);
     }
 
   private:
@@ -350,54 +377,27 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modification
     //
 
-    template <class, class Tuple,
-              class = std::make_index_sequence<std::tuple_size_v<Tuple>>>
-    struct Is_nothrow_emplaceable {
-    };
-    template <class T, class Tuple, std::size_t... Js>
-    struct Is_nothrow_emplaceable<T, Tuple, std::index_sequence<Js...>>
-        : std::is_nothrow_constructible<T, std::tuple_element_t<Js, Tuple>...> {
-    };
-
-    template <bool Emplace, class... Us>
-    struct Emplace_or_push_back_is_noexcept
-        : std::bool_constant<(
-              Is_nothrow_emplaceable<Ts, std::decay_t<Us>>::value && ...)> {
-    };
-    template <class... Us>
-    struct Emplace_or_push_back_is_noexcept<false, Us...>
-        : std::bool_constant<(std::is_nothrow_constructible<Ts, Us>::value &&
-                              ...)> {
-    };
-
-    template <bool Emplace, class... Us>
-    DORI_inline void Emplace_or_push_back(Us &&...xs) noexcept(
-        Emplace_or_push_back_is_noexcept<Emplace, Us...>::value)
-    {
-        assert(sz_ < cap_);
-        (..., [&]<class T, class U>(T &dst, U &&x) {
-            const auto addr = std::addressof(dst);
-            assert((char *)addr >= p_);
-            assert((char *)&addr[1] <= (char *)&p_[cap_ * Sz_all]);
-            if constexpr (Emplace) {
-                std::apply(
-                    [&]<class... Vs>(Vs && ...xs) {
-                        Al_tr::construct(al_, addr, static_cast<Vs &&>(xs)...);
-                    },
-                    static_cast<U &&>(x));
-            } else
-                Al_tr::construct(al_, addr, static_cast<U &&>(x));
-        }(data<Is>()[sz_], static_cast<Us &&>(xs)));
-        ++sz_;
-    }
+    static constexpr auto Emplacer =
+        []<class Al, class Ptr, class T>(Al &al_, Ptr p, T &&t) {
+            [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
+            {
+                static_assert(
+                    DORI_f_ok(Al_tr::construct, al_, p,
+                              std::get<Js>(static_cast<T &&>(t))...),
+                    "elements not constructible with parameters to emplace()");
+                Al_tr::construct(al_, p, std::get<Js>(static_cast<T &&>(t))...);
+            }
+            (static_cast<T &&>(t),
+             std::make_index_sequence<std::tuple_size_v<T>>{});
+        };
 
     //
     // Allocation
     //
 
-    DORI_inline void Re_alloc(std::size_t cap)
+    constexpr DORI_inline void Re_alloc(std::size_t cap)
     {
-        assert(cap >= sz_);
+        DORI_assert(cap >= sz_);
         auto p = Allocate(cap * Sz_all);
         (..., [&]<class T>(T *f, T *d_f) {
             for (const auto l = f + sz_; f != l; ++f, ++d_f) {
@@ -407,27 +407,28 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                     Al_tr::construct(al_, d_f, static_cast<Move_t<T>>(f[0]));
 #ifndef NDEBUG
                 } catch (...) {
-                    assert(!"disastrous error - move constrution shan't throw");
+                    DORI_assert(
+                        !"disastrous error - move constrution shan't throw");
                     throw;
                 }
 #endif
                 Al_tr::destroy(al_, f);
             }
-        }(data<Is>(), Ith_arr<Is>(p, cap)));
+        }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Ith_arr<Is>(cap))));
         Al_tr::deallocate(al_, p_, cap_ * Sz_all);
         p_   = p;
         cap_ = cap;
     }
 
-    DORI_inline auto Allocate(std::size_t n)
+    constexpr DORI_inline auto Allocate(std::size_t n)
     {
-        assert(!(n % Sz_all));
+        DORI_assert(!(n % Sz_all));
         auto p = Al_tr::allocate(al_, n);
-        assert(!(reinterpret_cast<uintptr_t>(p) % Align));
+        DORI_assert(!(reinterpret_cast<uintptr_t>(p) % Align));
         return p;
     }
 
-    DORI_inline void Destroy_to(void *p) noexcept
+    constexpr DORI_inline void Destroy_to(void *p) noexcept
     {
         static constexpr auto os = Get_offsets();
         using Os_is = std::index_sequence<static_cast<std::size_t>(os[Is])...>;
@@ -438,17 +439,14 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Layout query
     //
 
-    template <std::size_t I, class T, class Rev = std::false_type>
-    static constexpr auto Ith_arr(T *p, std::size_t cap, Rev = {}) noexcept
+    template <std::size_t I>
+    static constexpr inline std::ptrdiff_t Ith_arr(std::size_t cap) noexcept
     {
-        using E      = Elem<I>;
-        using EConst = std::conditional_t<std::is_const_v<T>, const E, E>;
-        static constexpr auto offset =
-            Get_offsets()[I] + (Rev::value ? sizeof(E) : 0);
-        return reinterpret_cast<EConst *>(&p[offset * cap]);
+        using offset = std::integral_constant<std::ptrdiff_t, Get_offsets()[I]>;
+        return offset::value * cap;
     }
 
-    static constexpr auto Get_offsets() noexcept
+    static constexpr inline auto Get_offsets() noexcept
     {
         std::array xs{std::pair{Is, sizeof(Ts)}...};
         std::sort(xs.begin(), xs.end(),

@@ -108,7 +108,7 @@ TEST_SUITE("dori::vector")
         static std::size_t ndtors = 0;
         struct S {
             S() { ++nctors; }
-            S(S&&) { ++nmoves; }
+            S(S &&) { ++nmoves; }
             S &operator=(S &&) { return ++nmoves, *this; }
             ~S() { ++ndtors; }
         };
@@ -141,29 +141,33 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("dori::vector works with algorithms")
     {
-        auto v          = dori::vector<int>();
-        using It        = decltype(v)::iterator;
-        const auto eq   = [](auto a, int b) { return std::get<0>(a) == b; };
+        auto v        = dori::vector<int>();
+        using It      = decltype(v)::iterator;
+        const auto eq = [](auto a, auto b) {
+            return std::get<0>(a) == std::get<0>(b);
+        };
         const auto even = [](auto x) { return std::get<0>(x) % 2 == 0; };
 
         v.reserve(8);
-        int nums[]{0, 1, 2, 3, 4, 5, 6, 7};
+        std::tuple<int> nums[]{{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}};
         std::copy(&nums[0], &nums[8], std::back_inserter(v));
-        REQUIRE(std::equal<It>(v.begin(), v.end(), nums, eq));
+        REQUIRE(std::equal<It>(v.begin(), v.end(), &nums[0], eq));
 
         v.erase(std::remove_if<It>(v.begin(), v.end(), even), v.end());
-        int odds[]{1, 3, 5, 7};
+        std::tuple<int> odds[]{{1}, {3}, {5}, {7}};
         REQUIRE_EQ(v.size(), std::size(odds));
         REQUIRE(std::equal<It>(v.begin(), v.end(), odds, eq));
-
+        
         decltype(v) v2;
         v2.reserve(v.size());
         std::transform<It>(v.begin(), v.end(), odds, std::back_inserter(v2),
-                           [](auto a, int b) { return std::get<0>(a) + b; });
-        int odds_doubled[]{2, 6, 10, 14};
+                           [](auto a, auto b) -> std::tuple<int> {
+                               return {std::get<0>(a) + std::get<0>(b)};
+                           });
+        std::tuple<int> odds_doubled[]{{2}, {6}, {10}, {14}};
         REQUIRE_EQ(v2.size(), std::size(odds_doubled));
         REQUIRE(std::equal<It>(v2.begin(), v2.end(), odds_doubled, eq));
-
+        
         const int sum = std::reduce<It>(
             ++v2.begin(), v2.end(), std::get<0>(v2[0]),
             [](int acc, auto cur) { return acc + std::get<0>(cur); });
