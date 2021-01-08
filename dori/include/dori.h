@@ -22,10 +22,6 @@ namespace detail
     __pragma(warning(push)) __pragma(warning(disable : 26409))
 #define DORI_explicit_new_and_delete_end __pragma(warning(pop))
 
-#define DORI_c_style_cast_begin                                                \
-    __pragma(warning(push)) __pragma(warning(disable : 26493))
-#define DORI_c_style_cast_end __pragma(warning(pop))
-
 template <class, class, class...>
 class vector_impl;
 
@@ -505,8 +501,7 @@ struct vector_caster {
         static_assert(equal_type_sizes,
                       "type sizes of given vectors must match");
 
-        DORI_c_style_cast_begin return *(Res *)(&src);
-        DORI_c_style_cast_end
+        return *reinterpret_cast<Res *>(&src);
     }
 };
 

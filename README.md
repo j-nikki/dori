@@ -1,6 +1,6 @@
 # dori
 
-This is a C++ container library concerned with data-oriented design.
+This is a C++ container library concerned with data-oriented design. Currently tested on VS 2019 Preview only.
 
 ## Runthrough
 
