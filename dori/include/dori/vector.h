@@ -311,22 +311,26 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modifiers
     //
 
-    constexpr DORI_inline iterator erase(const_iterator first,
-                                         const_iterator last)
+    constexpr DORI_inline iterator erase(
+        const_iterator first,
+        const_iterator last) noexcept((std::is_nothrow_move_assignable_v<Ts> &&
+                                       ...))
     {
         const auto f_i = sz_ + first.i;
         const auto n   = last.i - first.i;
-        const auto f   = [&]<class T>(T *d_f, T *l) {
-            for (auto f = d_f + n; f != l; ++f, ++d_f)
+        const std::tuple ptrs{(&data<Is>()[sz_] + f_i)...};
+        (..., [&](auto d_f) {
+            const auto e = d_f - first.i;
+            for (auto f = d_f + n; f != e; ++f, ++d_f)
                 d_f[0] = std::move(f[0]);
-            while (d_f != l)
+            while (d_f != e)
                 Al_tr::destroy(al_, d_f++);
-        };
-        return {{(f(data<Is>() + f_i, data<Is>() + sz_), data<Is>() + f_i)...},
-                -static_cast<intptr_t>(sz_ -= n)};
+        }(std::get<Is>(ptrs)));
+        return {{std::get<Is>(ptrs)...}, -static_cast<std::intptr_t>(sz_ -= n)};
     }
 
-    constexpr DORI_inline iterator erase(const_iterator pos)
+    constexpr DORI_inline iterator
+    erase(const_iterator pos) noexcept(noexcept(erase(pos, std::next(pos))))
     {
         return erase(pos, std::next(pos));
     }
@@ -351,9 +355,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     template <Tuple... Us>
     requires(sizeof...(Ts) == sizeof...(Us)) //
         constexpr DORI_inline iterator
-        emplace_back(std::piecewise_construct_t,
-                     Us &&...xs) /*noexcept(
-(noexcept(Emplacer(al_, &data<Is>()[sz_], static_cast<Us &&>(xs))) && ...)))*/
+        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept((
+            noexcept(Emplacer(al_, &data<Is>()[sz_], static_cast<Us &&>(xs))) &&
+            ...))
     {
         DORI_assert(sz_ < cap_);
         const std::tuple ptrs{&data<Is>()[sz_]...};
