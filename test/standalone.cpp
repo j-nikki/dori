@@ -6,5 +6,6 @@
 
 int main()
 {
-    auto v = dori::vector<int>();
+    dori::vector<int, double> v;
+    dori::vector_cast<float, int64_t>(v);
 }

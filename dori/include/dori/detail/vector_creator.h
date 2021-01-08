@@ -16,14 +16,12 @@ struct vector_creator {
     requires(
         requires { std::allocator_traits<Al>; } &&
         std::is_same_v<typename std::allocator_traits<Al>::value_type, char>) //
-        DORI_inline vector_impl<Al, std::index_sequence_for<Ts...>, Ts...>
+        DORI_inline vector_al<Al, Ts...>
         operator()(const Al &al) const noexcept(noexcept(Al{al}))
     {
         return al;
     }
-    DORI_inline vector_impl<
-        boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
-        std::index_sequence_for<Ts...>, Ts...>
+    DORI_inline vector<std::index_sequence_for<Ts...>, Ts...>
     operator()() const noexcept
     {
         return {};

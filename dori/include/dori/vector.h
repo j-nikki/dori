@@ -4,10 +4,14 @@
 #include "detail/vector_caster.h"
 #include "detail/vector_creator.h"
 
+#include <algorithm>
 #include <array>
 #include <assert.h>
+#include <boost/align/aligned_allocator.hpp>
+#include <memory>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
 
 namespace dori
 {
@@ -462,8 +466,17 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 } // namespace detail
 
 template <class... Ts>
-constexpr detail::vector_caster<Ts...> vector_cast{};
+constexpr inline detail::vector_caster<Ts...> vector_cast{};
 template <class... Ts>
-constexpr detail::vector_creator<Ts...> vector{};
+constexpr detail::vector_creator<Ts...> make_vector{};
+
+template <class Allocator, class... Ts>
+struct vector_al
+    : detail::vector_impl<Allocator, std::index_sequence_for<Ts...>, Ts...> {
+    using detail::vector_impl<Allocator, std::index_sequence_for<Ts...>,
+                              Ts...>::vector_impl;
+};
+template <class... Ts>
+using vector = detail::vector<Ts...>;
 
 } // namespace dori

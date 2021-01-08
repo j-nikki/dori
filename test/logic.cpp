@@ -284,7 +284,7 @@ TEST_SUITE("dori::vector")
             }
         } al;
         {
-            auto v = dori::vector<int>(al);
+            auto v = dori::make_vector<int>(al);
             v.reserve(2);
             v.resize(2);
             REQUIRE_EQ(allocations, v.capacity() * sizeof(int));
