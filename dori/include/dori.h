@@ -276,17 +276,16 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
 
     iterator erase(const_iterator first, const_iterator last)
     {
-        const auto f_idx     = sz_ + first.i;
-        const auto shift     = last.i - first.i;
-        const auto operation = [&]<class T>(T *f, T *l) {
-            auto it = f;
-            std::for_each(f + shift, l,
-                          [&](T &x) { (it++)[0] = std::move(x); });
-            std::destroy(it, l);
-            return f;
+        const auto f_i = sz_ + first.i;
+        const auto n   = last.i - first.i;
+        const auto f   = [&]<class T>(T *d_f, T *l) {
+            for (auto f = d_f + n; f != l; ++f, ++d_f)
+                d_f[0] = std::move(f[0]);
+            while (d_f != l)
+                Al_tr::destroy(al_, d_f++);
         };
-        return {{operation(data<Is>() + f_idx, data<Is>() + sz_)...},
-                -static_cast<intptr_t>(sz_ -= shift)};
+        return {{(f(data<Is>() + f_i, data<Is>() + sz_), data<Is>() + f_i)...},
+                -static_cast<intptr_t>(sz_ -= n)};
     }
 
     inline iterator erase(const_iterator pos)
@@ -409,7 +408,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
                     throw;
                 }
 #endif
-                x.~T();
+                Al_tr::destroy(al_, f);
             }
         }(data<Is>(), Ith_arr<Is>(p, cap)));
         Al_tr::deallocate(al_, p_, cap_ * Sz_all);
@@ -426,7 +425,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     }
 
     template <std::size_t I, class... Args>
-    inline void Construct(Elem<I> *p, Args &&...args)
+    inline void Construct(Elem<I> *p, Args &&...args) noexcept(
+        noexcept(Al_tr::construct(al_, p, static_cast<Args &&>(args)...)))
     {
         try {
             Al_tr::construct(al_, p, static_cast<Args &&>(args)...);
@@ -437,7 +437,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     }
 
     template <std::size_t I>
-    inline void Destruct_until(Elem<I> *p)
+    inline void Destruct_until(Elem<I> *p) noexcept
     {
         const auto off = p - data<I>();
         (..., [&]<std::size_t J>(Index<J>) {
@@ -462,16 +462,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         return reinterpret_cast<EConst *>(&p[offset * cap]);
     }
 
-    static constexpr std::array<std::ptrdiff_t, sizeof...(Ts)> Get_offsets()
+    static constexpr auto Get_offsets() noexcept
     {
-        std::array xs{
-            std::pair<std::size_t, std::ptrdiff_t>{Is, sizeof(Ts)}...};
+        std::array xs{std::pair{Is, sizeof(Ts)}...};
         std::sort(xs.begin(), xs.end(),
                   [](auto a, auto b) { return a.second > b.second; });
         std::array<std::ptrdiff_t, sizeof...(Ts)> res{};
         std::size_t sz = 0;
         for (auto [a, b] : xs) {
-            res[a] = sz;
+            res[a] = static_cast<std::ptrdiff_t>(sz);
             sz += b;
         }
         return res;
