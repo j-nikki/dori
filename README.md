@@ -6,7 +6,9 @@ This is a C++ container library concerned with data-oriented design. Currently t
 
 `v = dori::vector<Ts...>()` arranges the contained data so that all objects of each type are stored contiguously in the program memory. It is also quaranteed that only one allocation is made to contain all the elements and that the amount of memory reserved is no greater than `v.capacity() * (sizeof(Ts) + ...)`.
 
-To visualize, consider `dori::vector<int32_t, int64_t, int8_t>`. Internally the element sequences are ordered descendingly by alignment, so that, for a vector of `size() == capacity() == 4`, the internal layout is `i64 i64 i64 i64 i32 i32 i32 i32 i8 i8 i8 i8`.
+To visualize, consider `dori::vector<int32_t, int8_t, int64_t>()`. Internally the element sequences are ordered descendingly by alignment so that, given `size() == capacity() == 4`, the internal layout is `i64 i64 i64 i64 i32 i32 i32 i32 i8 i8 i8 i8`.
+
+Some differences to `std::vector`: `reference` is a tuple of lvalue references, `push_back()` and `emplace_back()` assume sufficient space, the vector never shrinks of its own accord.
 
 `dori::vector_cast<Us...>(v)` is a utility function that provides a reinterpreted view to the elements of the target vector.
 

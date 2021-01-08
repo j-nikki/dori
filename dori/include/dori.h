@@ -24,19 +24,17 @@ namespace detail
     __pragma(warning(push)) __pragma(warning(disable : 4648))
 #define DORI_use_no_unique_address_end __pragma(warning(pop))
 
-#define DORI_explicit_new_and_delete_begin                                     \
-    __pragma(warning(push)) __pragma(warning(disable : 26409))
-#define DORI_explicit_new_and_delete_end __pragma(warning(pop))
-
 template <class, class, class...>
 class vector_impl;
 
 template <class... Ts>
 struct vector_creator {
-    template <class Allocator>
-    requires std::is_same_v<typename Allocator::value_type, char> //
-        inline vector_impl<Allocator, std::index_sequence_for<Ts...>, Ts...>
-        operator()(const Allocator &al) const /*noexcept*/
+    template <class Al>
+    requires(
+        requires { std::allocator_traits<Al>; } &&
+        std::is_same_v<typename std::allocator_traits<Al>::value_type, char>) //
+        inline vector_impl<Al, std::index_sequence_for<Ts...>, Ts...>
+        operator()(const Al &al) const noexcept(noexcept(Al{al}))
     {
         return al;
     }
@@ -138,19 +136,19 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     // Member functions
     //
 
-    DORI_inline vector_impl() noexcept : al_() {}
-    DORI_inline vector_impl(const Al &al) noexcept(noexcept(Al(al))) : al_(al)
+    DORI_inline vector_impl() noexcept : al_{} {}
+    DORI_inline vector_impl(const Al &al) noexcept(noexcept(Al{al})) : al_{al}
     {
     }
     DORI_inline vector_impl(vector_impl &&other) noexcept
-        : al_(std::move(other.al_)), p_(other.p_), sz_(other.sz_),
-          cap_(other.cap_)
+        : al_{std::move(other.al_)}, p_{other.p_}, sz_{other.sz_},
+          cap_{other.cap_}
     {
         other.p_   = nullptr;
         other.sz_  = 0;
         other.cap_ = 0;
     }
-    DORI_inline vector_impl(const vector_impl &other) : vector_impl(other.al_)
+    DORI_inline vector_impl(const vector_impl &other) : vector_impl{other.al_}
     {
         cap_ = other.cap_;
         sz_  = other.sz_;
@@ -172,7 +170,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         return *this;
     }
 
-    DORI_inline vector_impl &operator=(vector_impl &&rhs)
+    DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept
     {
         vector_impl{std::move(rhs)}.swap(*this);
         return *this;
@@ -195,13 +193,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     // Element access
     //
 
-    DORI_inline reference operator[](std::size_t i)
+    DORI_inline reference operator[](std::size_t i) noexcept
     {
+        assert(i < sz_);
         return {Ith_arr<Is>(p_, cap_)[i]...};
     }
 
-    DORI_inline const_reference operator[](std::size_t i) const
+    DORI_inline const_reference operator[](std::size_t i) const noexcept
     {
+        assert(i < sz_);
         return {Ith_arr<Is>(p_, cap_)[i]...};
     }
 
@@ -219,11 +219,27 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         return operator[](i);
     }
 
-    DORI_inline reference front() { return *begin(); }
-    DORI_inline const_reference front() const { return *begin(); }
+    DORI_inline reference front() noexcept
+    {
+        assert(sz_ > 0);
+        return *begin();
+    }
+    DORI_inline const_reference front() const
+    {
+        assert(sz_ > 0);
+        return *begin();
+    }
 
-    DORI_inline reference back() { return *operator[](sz_ - 1); }
-    DORI_inline const_reference back() const { return *operator[](sz_ - 1); }
+    DORI_inline reference back()
+    {
+        assert(sz_ > 0);
+        return *operator[](sz_ - 1);
+    }
+    DORI_inline const_reference back() const
+    {
+        assert(sz_ > 0);
+        return *operator[](sz_ - 1);
+    }
 
     template <std::size_t I>
     DORI_inline Elem<I> *data() noexcept
@@ -393,7 +409,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     DORI_inline void Emplace_or_push_back(Us &&...xs) noexcept(
         Emplace_or_push_back_is_noexcept<Emplace, Us...>::value)
     {
-        DORI_explicit_new_and_delete_begin assert(sz_ < cap_);
+        assert(sz_ < cap_);
         (..., [&]<class T, class U>(T &dst, U &&x) {
             const auto addr = std::addressof(dst);
             assert((char *)addr >= p_);
@@ -408,7 +424,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
                 Al_tr::construct(al_, addr, static_cast<U &&>(x));
         }(data<Is>()[sz_], static_cast<Us &&>(xs)));
         ++sz_;
-        DORI_explicit_new_and_delete_end
     }
 
     //
