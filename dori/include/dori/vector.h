@@ -1,11 +1,11 @@
 ﻿#pragma once
 
 #include "detail/opaque_vector.h"
+#include "detail/vector_caster.h"
+#include "detail/vector_creator.h"
 
-#include <algorithm>
 #include <array>
 #include <assert.h>
-#include <boost/align/aligned_allocator.hpp>
 #include <stdexcept>
 #include <tuple>
 
@@ -15,41 +15,9 @@ namespace dori
 namespace detail
 {
 
-#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
-#define DORI_inline inline __forceinline
-#else
-#define DORI_inline inline
-#endif
-
-template <class, class, class...>
-class vector_impl;
-
-template <class... Ts>
-struct vector_creator {
-    template <class Al>
-    requires(
-        requires { std::allocator_traits<Al>; } &&
-        std::is_same_v<typename std::allocator_traits<Al>::value_type, char>) //
-        inline vector_impl<Al, std::index_sequence_for<Ts...>, Ts...>
-        operator()(const Al &al) const noexcept(noexcept(Al{al}))
-    {
-        return al;
-    }
-    inline vector_impl<
-        boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
-        std::index_sequence_for<Ts...>, Ts...>
-    operator()() const noexcept
-    {
-        return {};
-    }
-};
-
 template <class T>
 using Move_t =
     std::conditional_t<std::is_trivially_copy_constructible_v<T>, T &, T &&>;
-
-template <std::size_t I>
-using Index = std::integral_constant<std::size_t, I>;
 
 template <class Al, std::size_t... Is, class... Ts>
 class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
@@ -154,7 +122,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     DORI_inline vector_impl(const vector_impl &other) : opaque_vector<Al>{other}
     {
         p_ = Allocate(cap_ * Sz_all);
-        (..., [&]<std::size_t I, class T>(Index<I>, const T *f, T *d_f) {
+        (..., [&]<std::size_t I, class T>(const T *f, T *d_f) {
             try {
                 for (const auto l = f + sz_; f != l; ++f, ++d_f)
                     Al_tr::construct(al_, d_f, f[0]);
@@ -163,7 +131,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                 Al_tr::deallocate(al_, p_, cap_ * Sz_all);
                 throw;
             }
-        }(Index<Is>{}, other.data<Is>(), data<Is>()));
+        }.template operator()<Is>(other.data<Is>(), data<Is>()));
     }
 
     DORI_inline vector_impl &operator=(const vector_impl &rhs)
@@ -488,32 +456,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
             sz += b;
         }
         return res;
-    }
-};
-
-template <class... Ts>
-struct vector_caster {
-    template <class Al, std::size_t... Is, class... Us>
-    constexpr DORI_inline auto &
-    operator()(vector_impl<Al, std::index_sequence<Is...>, Us...> &src) const
-    {
-        using Res = vector_impl<Al, std::index_sequence<Is...>, Ts...>;
-        using Src = std::remove_reference_t<decltype(src)>;
-
-        static_assert(sizeof...(Ts) == sizeof...(Us),
-                      "vector dimensions must match");
-
-        constexpr bool equal_type_sizes = [] {
-            std::array sz1{sizeof(Ts)...};
-            std::array sz2{sizeof(Us)...};
-            std::sort(sz1.begin(), sz1.end(), std::greater<>{});
-            std::sort(sz2.begin(), sz2.end(), std::greater<>{});
-            return std::equal(sz1.begin(), sz1.end(), sz2.begin(), sz2.end());
-        }();
-        static_assert(equal_type_sizes,
-                      "type sizes of given vectors must match");
-
-        return *reinterpret_cast<Res *>(&src);
     }
 };
 
