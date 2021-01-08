@@ -45,16 +45,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     static constexpr auto Sz_all = (sizeof(Ts) + ...);
     static constexpr auto Align  = std::max({alignof(Ts)...});
 
-    template <class, class = void>
-    struct Is_tuple : std::false_type {
-    };
-    template <class T>
-    struct Is_tuple<
-        T, std::void_t<std::tuple_size<T>,
-                       decltype(std::get<0>(std::declval<const T &>()))>>
-        : std::bool_constant<std::tuple_size_v<T> == sizeof...(Ts)> {
-    };
-
 #define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_const_iterator          \
     std::tuple<const Ts *...>
 #define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_iterator                \
@@ -187,14 +177,14 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     constexpr DORI_inline reference operator[](std::size_t i) noexcept
     {
         DORI_assert(i < sz_);
-        return {reinterpret_cast<Ts *>(&p_[Ith_arr<Is>(cap_)])[i]...};
+        return {reinterpret_cast<Ts *>(&p_[Offsets[Is] * cap_])[i]...};
     }
 
     constexpr DORI_inline const_reference
     operator[](std::size_t i) const noexcept
     {
         DORI_assert(i < sz_);
-        return {reinterpret_cast<const Ts *>(&p_[Ith_arr<Is>(cap_)])[i]...};
+        return {reinterpret_cast<const Ts *>(&p_[Offsets[Is] * cap_])[i]...};
     }
 
     constexpr DORI_inline reference at(std::size_t i)
@@ -236,13 +226,13 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     template <std::size_t I>
     constexpr DORI_inline auto data() noexcept
     {
-        return reinterpret_cast<Elem<I> *>(p_ + Ith_arr<I>(cap_));
+        return reinterpret_cast<Elem<I> *>(p_ + Offsets[I] * cap_);
     }
 
     template <std::size_t I>
     constexpr DORI_inline auto data() const noexcept
     {
-        return reinterpret_cast<const Elem<I> *>(p_ + Ith_arr<I>(cap_));
+        return reinterpret_cast<const Elem<I> *>(p_ + Offsets[I] * cap_);
     }
 
     //
@@ -381,19 +371,18 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modification
     //
 
-    static constexpr auto Emplacer =
-        []<class Al, class Ptr, class T>(Al &al_, Ptr p, T &&t) {
-            [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
-            {
-                static_assert(
-                    DORI_f_ok(Al_tr::construct, al_, p,
-                              std::get<Js>(static_cast<T &&>(t))...),
-                    "elements not constructible with parameters to emplace()");
-                Al_tr::construct(al_, p, std::get<Js>(static_cast<T &&>(t))...);
-            }
-            (static_cast<T &&>(t),
-             std::make_index_sequence<std::tuple_size_v<T>>{});
-        };
+    static constexpr auto Emplacer = []<class T>(auto &al_, auto p, T &&t) {
+        [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
+        {
+            static_assert(
+                DORI_f_ok(Al_tr::construct, al_, p,
+                          std::get<Js>(static_cast<T &&>(t))...),
+                "elements not constructible with parameters to emplace()");
+            Al_tr::construct(al_, p, std::get<Js>(static_cast<T &&>(t))...);
+        }
+        (static_cast<T &&>(t),
+         std::make_index_sequence<std::tuple_size_v<T>>{});
+    };
 
     //
     // Allocation
@@ -418,7 +407,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 #endif
                 Al_tr::destroy(al_, f);
             }
-        }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Ith_arr<Is>(cap))));
+        }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Offsets[Is] * cap)));
         Al_tr::deallocate(al_, p_, cap_ * Sz_all);
         p_   = p;
         cap_ = cap;
@@ -434,7 +423,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline void Destroy_to(void *p) noexcept
     {
-        static constexpr auto os = Get_offsets();
+        static constexpr auto os = Offsets;
         using Os_is = std::index_sequence<static_cast<std::size_t>(os[Is])...>;
         ::dori::detail::Destroy_to<Os_is, Elem<Is>...>::fn(*this, p);
     }
@@ -443,15 +432,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Layout query
     //
 
-    template <std::size_t I>
-    static constexpr inline std::ptrdiff_t Ith_arr(std::size_t cap) noexcept
-    {
-        using offset = std::integral_constant<std::ptrdiff_t, Get_offsets()[I]>;
-        return offset::value * cap;
-    }
-
-    static constexpr inline auto Get_offsets() noexcept
-    {
+    static constexpr inline auto Offsets = [] {
         std::array xs{std::pair{Is, sizeof(Ts)}...};
         std::sort(xs.begin(), xs.end(),
                   [](auto a, auto b) { return a.second > b.second; });
@@ -462,7 +443,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
             sz += b;
         }
         return res;
-    }
+    }();
 };
 
 } // namespace detail

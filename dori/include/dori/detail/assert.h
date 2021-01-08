@@ -1,8 +1,8 @@
 #pragma once
 
+#include <assert.h>
 #include <stdexcept>
 #include <type_traits>
-#include <assert.h>
 
 #ifndef NDEBUG
 #define DORI_assert(Expr)                                                      \
@@ -16,5 +16,5 @@
             return [](bool e) { assert(e); };                                  \
     }()(Expr)
 #else
-#define DORI_assert(...) ((void)0)
+#define DORI_assert(Expr) __assume(Expr)
 #endif
