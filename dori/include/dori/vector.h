@@ -1,10 +1,11 @@
 ﻿#pragma once
 
+#include "detail/opaque_vector.h"
+
 #include <algorithm>
 #include <array>
 #include <assert.h>
 #include <boost/align/aligned_allocator.hpp>
-#include <memory>
 #include <stdexcept>
 #include <tuple>
 
@@ -19,10 +20,6 @@ namespace detail
 #else
 #define DORI_inline inline
 #endif
-
-#define DORI_use_no_unique_address_begin                                       \
-    __pragma(warning(push)) __pragma(warning(disable : 4648))
-#define DORI_use_no_unique_address_end __pragma(warning(pop))
 
 template <class, class, class...>
 class vector_impl;
@@ -53,39 +50,6 @@ using Move_t =
 
 template <std::size_t I>
 using Index = std::integral_constant<std::size_t, I>;
-
-template <class Allocator>
-struct opaque_vector {
-    DORI_use_no_unique_address_begin [[no_unique_address]] Allocator al_;
-    DORI_use_no_unique_address_end char *p_ = nullptr;
-    std::size_t sz_                         = 0;
-    std::size_t cap_                        = 0;
-};
-
-//
-// Destroying up to a given element is an operation used in unhappy paths and is
-// thus not important to be inlined. Externalizing this functionality allows us
-// to engage the same machinery for vector<i32, i64> and vector<i64, i32> (as
-// their underlying layouts match).
-//
-
-template <class...>
-struct Destroy_to;
-template <std::size_t... Is, class... Ts>
-struct Destroy_to<std::index_sequence<Is...>, Ts...> {
-    template <class Al>
-    static void fn(opaque_vector<Al> &v, void *p) noexcept
-    {
-        (... && [&]<std::size_t I, class T>() {
-            const auto data = reinterpret_cast<T *>(v.p_ + I * v.cap_);
-            auto f          = data;
-            const auto l    = std::min(data + v.sz_, reinterpret_cast<T *>(p));
-            while (f != l)
-                std::allocator_traits<Al>::destroy(v.al_, f++);
-            return f == data + v.sz_;
-        }.template operator()<Is, Ts>());
-    }
-};
 
 template <class Al, std::size_t... Is, class... Ts>
 class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
