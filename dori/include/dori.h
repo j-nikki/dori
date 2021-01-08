@@ -39,7 +39,7 @@ struct vector_creator {
         return al;
     }
     inline vector_impl<
-        boost::alignment::aligned_allocator<char, std::max({sizeof(Ts)...})>,
+        boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
         std::index_sequence_for<Ts...>, Ts...>
     operator()() const noexcept
     {
@@ -47,30 +47,23 @@ struct vector_creator {
     }
 };
 
+template <class T>
+using Move_t =
+    std::conditional_t<std::is_trivially_copy_constructible_v<T>, T &, T &&>;
+
+template <std::size_t I>
+using Index = std::integral_constant<std::size_t, I>;
+
 template <class Al, std::size_t... Is, class... Ts>
 class vector_impl<Al, std::index_sequence<Is...>, Ts...>
 {
-    using AlTr = std::allocator_traits<Al>;
+    using Al_tr = std::allocator_traits<Al>;
 
     template <std::size_t I>
     using Elem = std::tuple_element_t<I, std::tuple<Ts...>>;
 
     static constexpr auto Sz_all = (sizeof(Ts) + ...);
-
-    static constexpr std::array<std::ptrdiff_t, sizeof...(Ts)> Get_offsets()
-    {
-        std::array xs{
-            std::pair<std::size_t, std::ptrdiff_t>{Is, sizeof(Ts)}...};
-        std::sort(xs.begin(), xs.end(),
-                  [](auto a, auto b) { return a.second > b.second; });
-        std::array<std::ptrdiff_t, sizeof...(Ts)> res{};
-        std::size_t sz = 0;
-        for (auto [a, b] : xs) {
-            res[a] = sz;
-            sz += b;
-        }
-        return res;
-    }
+    static constexpr auto Align  = std::max({alignof(Ts)...});
 
     template <class, class = void>
     struct Is_tuple : std::false_type {
@@ -139,11 +132,14 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     {
         cap_ = other.cap_;
         sz_  = other.sz_;
-        p_   = al_.allocate(cap_ * Sz_all);
+        p_   = Allocate(cap_ * Sz_all);
         try {
-            (std::uninitialized_copy_n(other.data<Is>(), sz_, data<Is>()), ...);
+            (..., [&]<std::size_t I, class T>(Index<I>, const T *f, T *d_f) {
+                for (const auto l = f + sz_; f != l; ++f, ++d_f)
+                    Construct<I>(d_f, f[0]);
+            }(Index<Is>{}, other.data<Is>(), data<Is>()));
         } catch (...) {
-            al_.deallocate(p_, cap_ * Sz_all);
+            Al_tr::deallocate(al_, p_, cap_ * Sz_all);
             throw;
         }
     }
@@ -163,9 +159,11 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     inline ~vector_impl()
     {
         if (p_) {
-            for (auto j = sz_; j--;)
-                (std::destroy_at(&data<Is>()[j]), ...);
-            al_.deallocate(p_, cap_ * Sz_all);
+            (..., [&]<class T>(T *f, T *l) {
+                while (f != l)
+                    Al_tr::destroy(al_, f++);
+            }(data<Is>(), data<Is>() + sz_));
+            Al_tr::deallocate(al_, p_, cap_ * Sz_all);
         }
     }
 
@@ -247,7 +245,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         if (cap <= cap_)
             return;
         if (!p_) {
-            p_   = al_.allocate(cap * Sz_all);
+            p_   = Allocate(cap * Sz_all);
             cap_ = cap;
         } else
             Re_alloc(cap);
@@ -282,7 +280,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         const auto shift     = last.i - first.i;
         const auto operation = [&]<class T>(T *f, T *l) {
             auto it = f;
-            std::for_each(f + shift, l, [&](T &x) { *it++ = std::move(x); });
+            std::for_each(f + shift, l,
+                          [&](T &x) { (it++)[0] = std::move(x); });
             std::destroy(it, l);
             return f;
         };
@@ -331,17 +330,21 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
     }
 
   private:
+    //
+    // Modification
+    //
+
     template <bool Shrink>
     inline void Shrink_or_extend_at(std::size_t a, std::size_t b) noexcept(
-        Shrink ? (std::is_nothrow_destructible<Ts>::value &&...)
-               : (std::is_nothrow_default_constructible<Ts>::value &&...))
+        Shrink || (noexcept(Construct<Is>(std::declval<Ts *>())) && ...))
     {
-        (..., []<class T>(T *first, T *last) {
-            if constexpr (Shrink)
-                std::destroy(first, last);
-            else
-                std::uninitialized_default_construct(first, last);
-        }(data<Is>() + a, data<Is>() + b));
+        (..., [&]<std::size_t I, class T>(Index<I>, T *f, T *l) {
+            while (f != l)
+                if constexpr (Shrink)
+                    Al_tr::destroy(al_, f++);
+                else
+                    Construct<I>(f++);
+        }(Index<Is>{}, data<Is>() + a, data<Is>() + b));
     }
 
     template <class, class Tuple,
@@ -376,34 +379,78 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
             if constexpr (Emplace) {
                 std::apply(
                     [&]<class... Vs>(Vs && ...xs) {
-                        new (addr) T(static_cast<Vs &&>(xs)...);
+                        Al_tr::construct(al_, addr, static_cast<Vs &&>(xs)...);
                     },
                     static_cast<U &&>(x));
             } else
-                new (addr) T(static_cast<U &&>(x));
+                Al_tr::construct(al_, addr, static_cast<U &&>(x));
         }(data<Is>()[sz_], static_cast<Us &&>(xs)));
         ++sz_;
         DORI_explicit_new_and_delete_end
     }
 
-    template <class T>
-    using Move_t = std::conditional_t<std::is_trivially_copy_constructible_v<T>,
-                                      T &, T &&>;
+    //
+    // Allocation
+    //
 
     inline void Re_alloc(std::size_t cap)
     {
         assert(cap >= sz_);
-        auto p = al_.allocate(cap * Sz_all);
+        auto p = Allocate(cap * Sz_all);
         (..., [&]<class T>(T *f, T *d_f) {
-            std::for_each_n(f, sz_, [&](T &x) {
-                new (d_f++) T{static_cast<Move_t<T>>(x)};
+            for (const auto l = f + sz_; f != l; ++f, ++d_f) {
+#ifndef NDEBUG
+                try {
+#endif
+                    Al_tr::construct(al_, d_f, static_cast<Move_t<T>>(f[0]));
+#ifndef NDEBUG
+                } catch (...) {
+                    assert(!"disastrous error - move constrution shan't throw");
+                    throw;
+                }
+#endif
                 x.~T();
-            });
+            }
         }(data<Is>(), Ith_arr<Is>(p, cap)));
-        al_.deallocate(p_, cap_ * Sz_all);
+        Al_tr::deallocate(al_, p_, cap_ * Sz_all);
         p_   = p;
         cap_ = cap;
     }
+
+    inline auto Allocate(std::size_t n)
+    {
+        assert(!(n % Sz_all));
+        auto p = Al_tr::allocate(al_, n);
+        assert(!(reinterpret_cast<uintptr_t>(p) % Align));
+        return p;
+    }
+
+    template <std::size_t I, class... Args>
+    inline void Construct(Elem<I> *p, Args &&...args)
+    {
+        try {
+            Al_tr::construct(al_, p, static_cast<Args &&>(args)...);
+        } catch (...) {
+            Destruct_until<I>(p);
+            throw;
+        }
+    }
+
+    template <std::size_t I>
+    inline void Destruct_until(Elem<I> *p)
+    {
+        const auto off = p - data<I>();
+        (..., [&]<std::size_t J>(Index<J>) {
+            auto f = data<J>();
+            auto l = f + (J > I ? 0 : J < I ? sz_ : off);
+            while (l != f)
+                Al_tr::destroy(al_, --l);
+        }(Index<sizeof...(Is) - 1 - Is>{}));
+    }
+
+    //
+    // Layout query
+    //
 
     template <std::size_t I, class T, class Rev = std::false_type>
     static constexpr auto Ith_arr(T *p, std::size_t cap, Rev = {}) noexcept
@@ -413,6 +460,21 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...>
         static constexpr auto offset =
             Get_offsets()[I] + (Rev::value ? sizeof(E) : 0);
         return reinterpret_cast<EConst *>(&p[offset * cap]);
+    }
+
+    static constexpr std::array<std::ptrdiff_t, sizeof...(Ts)> Get_offsets()
+    {
+        std::array xs{
+            std::pair<std::size_t, std::ptrdiff_t>{Is, sizeof(Ts)}...};
+        std::sort(xs.begin(), xs.end(),
+                  [](auto a, auto b) { return a.second > b.second; });
+        std::array<std::ptrdiff_t, sizeof...(Ts)> res{};
+        std::size_t sz = 0;
+        for (auto [a, b] : xs) {
+            res[a] = sz;
+            sz += b;
+        }
+        return res;
     }
 
     char *p_         = nullptr;
