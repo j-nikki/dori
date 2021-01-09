@@ -26,7 +26,7 @@ TEST_SUITE("dori::vector")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
-        auto v = dori::vector<A, B>();
+        dori::vector<A, B> v;
 
         v.reserve(8);
         REQUIRE_EQ(A_def_ctors, 0);
@@ -52,7 +52,7 @@ TEST_SUITE("dori::vector")
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
         {
-            auto v = dori::vector<A, B>();
+            dori::vector<A, B> v;
             v.reserve(8);
             v.resize(8);
         }
@@ -66,7 +66,7 @@ TEST_SUITE("dori::vector")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
-        auto v = dori::vector<A, B>();
+        dori::vector<A, B> v;
 
         v.reserve(8);
         v.resize(8);
@@ -83,7 +83,7 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("")
     {
-        auto v = dori::vector<int8_t, int64_t, int16_t, int32_t>();
+        dori::vector<int8_t, int64_t, int16_t, int32_t> v;
         v.reserve(1);
         v.resize(1);
         auto [i8, i64, i16, i32] = v[0];
@@ -113,7 +113,7 @@ TEST_SUITE("dori::vector")
             S &operator=(S &&) { return ++nmoves, *this; }
             ~S() { ++ndtors; }
         };
-        auto v = dori::vector<S>();
+        dori::vector<S> v;
         REQUIRE_EQ(v.size(), 0);
         REQUIRE_EQ(nctors, 0);
         REQUIRE_EQ(nmoves, 0);
@@ -142,7 +142,7 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("dori::vector works with algorithms")
     {
-        auto v        = dori::vector<int>();
+        dori::vector<int> v;
         using It      = decltype(v)::iterator;
         const auto eq = [](auto a, auto b) {
             return std::get<0>(a) == std::get<0>(b);
@@ -179,7 +179,7 @@ TEST_SUITE("dori::vector")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
-        auto v = dori::vector<A, B>();
+        dori::vector<A, B> v;
         v.reserve(8);
         v.resize(8);
 
@@ -267,7 +267,7 @@ TEST_SUITE("dori::vector")
     {
         SUBCASE("result of dori::vector_cast uses its own offset array")
         {
-            auto v   = dori::vector<int, double>();
+            dori::vector<int, double> v;
             auto &v2 = dori::vector_cast<double, unsigned>(v);
             v.reserve(8);
             for (int x : {0, 1, 2, 3, 4, 5, 6, 7})
@@ -296,7 +296,7 @@ TEST_SUITE("dori::vector")
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(C)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(D)
             {
-                auto v = dori::vector<A, B>();
+                dori::vector<A, B> v;
                 v.reserve(8);
                 v.resize(8);
                 auto v2 = dori::vector_cast<C, D>(v);

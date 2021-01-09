@@ -10,14 +10,14 @@
 
 namespace dori::detail
 {
+template <class T>
+concept Char_allocator =
+    std::is_same_v<typename std::allocator_traits<T>::value_type, char>;
 template <class... Ts>
 struct vector_maker {
-    template <class Al>
-    requires(
-        requires { std::allocator_traits<Al>; } &&
-        std::is_same_v<typename std::allocator_traits<Al>::value_type, char>) //
-        DORI_inline vector_al<Al, Ts...>
-        operator()(const Al &al) const noexcept(noexcept(Al{al}))
+    template <Char_allocator Al>
+    DORI_inline vector_al<Al, Ts...> operator()(const Al &al) const
+        noexcept(noexcept(Al{al}))
     {
         return al;
     }
