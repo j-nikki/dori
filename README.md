@@ -10,7 +10,7 @@ To visualize, consider `dori::vector<int32_t, int8_t, int64_t>`. Internally the 
 
 Some differences to `std::vector`: `reference` is a tuple of lvalue references, `push_back()` and `emplace_back()` assume sufficient space, the vector never shrinks of its own accord.
 
-`dori::vector_cast<Us...>(v)` is a utility function that provides a reinterpreted view to the elements of the target vector.
+`dori::vector_cast<Us...>(v)` is a utility function that provides a reinterpreted view to the elements of the target vector. The order among element sequences of same size is stable: given `dori::vector<double, int, float> v`, `dori::vector_cast<float, int, double>(v)` will provide such view to `v` that the ints and floats shall be interpreted as floats and ints respectively.
 
 ## Using in your project
 
