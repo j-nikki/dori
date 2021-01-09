@@ -287,7 +287,6 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(v_i7, v2_u7);
             REQUIRE_EQ(v_d7, v2_d7);
         }
-
         SUBCASE("dori::vector can be copy-constructed from "
                 "dori::vector_cast")
         {
@@ -419,12 +418,35 @@ TEST_SUITE("dori::vector")
                 dori::vector<S> v;
                 v.reserve(10);
                 v.resize(9);
-                REQUIRE_THROWS_AS((v.emplace_back()), S::error);
+                REQUIRE_THROWS_AS(v.emplace_back(), S::error);
             }
             REQUIRE_EQ(ctors, 9);
             REQUIRE_EQ(dtors, 9);
         }
-        SUBCASE("throwing copy ctor causes unwind")
+        SUBCASE("throwing in emplace() of n-ary tuple unwinds")
+        {
+            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
+            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(C)
+            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(D)
+            struct S {
+                struct error {
+                };
+                S() { throw error{}; }
+            };
+            dori::vector<A, B, S, C, D> v;
+            v.reserve(1);
+            REQUIRE_THROWS_AS(v.emplace_back(), S::error);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(B_def_ctors, 1);
+            REQUIRE_EQ(C_def_ctors, 0);
+            REQUIRE_EQ(D_def_ctors, 0);
+            REQUIRE_EQ(A_dtors, 1);
+            REQUIRE_EQ(B_dtors, 1);
+            REQUIRE_EQ(C_dtors, 0);
+            REQUIRE_EQ(D_dtors, 0);
+        }
+        SUBCASE("throwing from copy ctor unwinds")
         {
             static int until_throw = 9;
             static int dtors       = 0;

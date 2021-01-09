@@ -35,13 +35,12 @@ struct Destroy_tail_impl {
     template <class Al, class... Ts>
     static void fn(opaque_vector<Al> &v, void *p, std::size_t f_idx) noexcept
     {
-        (... && [&]<std::ptrdiff_t N, class T>() {
+        (..., [&]<std::ptrdiff_t N, class T>() {
             const auto data = reinterpret_cast<T *>(v.p_ + N * v.cap_);
-            auto f          = data + f_idx;
-            const auto l    = std::min(data + v.sz_, reinterpret_cast<T *>(p));
-            while (f != l)
-                std::allocator_traits<Al>::destroy(v.al_, f++);
-            return f == data + v.sz_ + 1;
+            const auto l = std::min(reinterpret_cast<uintptr_t>(data + v.sz_),
+                                    reinterpret_cast<uintptr_t>(p));
+            for (auto it = data + f_idx; reinterpret_cast<uintptr_t>(it) < l;)
+                std::allocator_traits<Al>::destroy(v.al_, it++);
         }.template operator()<Ns, Ts>());
     }
 };

@@ -267,7 +267,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     constexpr DORI_inline std::size_t capacity() const noexcept { return cap_; }
     constexpr DORI_inline bool empty() const noexcept { return !sz_; }
 
-    constexpr DORI_inline void reserve(std::size_t cap)
+    constexpr DORI_inline void reserve(std::size_t cap) noexcept(
+        noexcept(Move_to_alloc(cap, Allocate(cap *Sz_all))))
     {
         DORI_assert(cap > cap_);
         auto p = Allocate(cap * Sz_all);
@@ -288,6 +289,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                         Al_tr::construct(al_, f);
                 } catch (...) {
                     Destroy_tail(f, off);
+                    sz_ = off;
                     throw;
                 }
             }(data<Is>() + off, data<Is>() + sz));
@@ -400,9 +402,11 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     //
 
     static constexpr auto Emplace = []<class T, class X>(auto v, X *p, T &&t) {
+#ifndef __INTELLISENSE__ /* 20210110: IntelliSense ICE'd on these (?) */
         DORI_assert(reinterpret_cast<uintptr_t>(p) % alignof(X) == 0);
         DORI_assert(reinterpret_cast<char *>(p) >= v->p_);
         DORI_assert(reinterpret_cast<char *>(p) < v->p_ + Sz_all * v->cap_);
+#endif
         [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
         {
             static_assert(
