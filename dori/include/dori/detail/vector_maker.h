@@ -11,7 +11,7 @@
 namespace dori::detail
 {
 template <class... Ts>
-struct vector_creator {
+struct vector_maker {
     template <class Al>
     requires(
         requires { std::allocator_traits<Al>; } &&

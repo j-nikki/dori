@@ -4,7 +4,7 @@
 #include "detail/opaque_vector.h"
 #include "detail/traits.h"
 #include "detail/vector_caster.h"
-#include "detail/vector_creator.h"
+#include "detail/vector_maker.h"
 
 #include <algorithm>
 #include <array>
@@ -452,7 +452,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 template <class... Ts>
 constexpr inline detail::vector_caster<Ts...> vector_cast{};
 template <class... Ts>
-constexpr detail::vector_creator<Ts...> make_vector{};
+constexpr detail::vector_maker<Ts...> make_vector{};
 
 template <class Allocator, class... Ts>
 struct vector_al
