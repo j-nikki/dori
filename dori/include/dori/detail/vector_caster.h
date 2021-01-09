@@ -15,23 +15,18 @@ struct vector_caster {
     template <class Al, class... Us>
     constexpr DORI_inline auto &operator()(vector_al<Al, Us...> &src) const
     {
-        using Res = vector_al<Al, Ts...>;
-        using Src = std::remove_reference_t<decltype(src)>;
-
         static_assert(sizeof...(Ts) == sizeof...(Us),
                       "vector dimensions must match");
 
-        constexpr bool equal_type_sizes = [] {
-            std::array sz1{sizeof(Ts)...};
-            std::array sz2{sizeof(Us)...};
-            std::sort(sz1.begin(), sz1.end(), std::greater<>{});
-            std::sort(sz2.begin(), sz2.end(), std::greater<>{});
-            return std::equal(sz1.begin(), sz1.end(), sz2.begin(), sz2.end());
-        }();
-        static_assert(equal_type_sizes,
+        auto sorted = [](auto... sz) {
+            std::array arr{sz...};
+            std::sort(arr.begin(), arr.end());
+            return arr;
+        };
+        static_assert(sorted(sizeof(Ts)...) == sorted(sizeof(Us)...),
                       "type sizes of given vectors must match");
 
-        return *reinterpret_cast<Res *>(&src);
+        return *reinterpret_cast<vector_al<Al, Ts...> *>(&src);
     }
 };
 

@@ -157,7 +157,7 @@ TEST_SUITE("dori::vector")
         std::tuple<int> odds[]{{1}, {3}, {5}, {7}};
         REQUIRE_EQ(v.size(), std::size(odds));
         REQUIRE(std::equal<It>(v.begin(), v.end(), odds, eq));
-        
+
         decltype(v) v2;
         v2.reserve(v.size());
         std::transform<It>(v.begin(), v.end(), odds, std::back_inserter(v2),
@@ -167,7 +167,7 @@ TEST_SUITE("dori::vector")
         std::tuple<int> odds_doubled[]{{2}, {6}, {10}, {14}};
         REQUIRE_EQ(v2.size(), std::size(odds_doubled));
         REQUIRE(std::equal<It>(v2.begin(), v2.end(), odds_doubled, eq));
-        
+
         const int sum = std::reduce<It>(
             ++v2.begin(), v2.end(), std::get<0>(v2[0]),
             [](int acc, auto cur) { return acc + std::get<0>(cur); });
@@ -203,6 +203,63 @@ TEST_SUITE("dori::vector")
 
         REQUIRE_EQ(A_dtors, 16);
         REQUIRE_EQ(B_dtors, 16);
+    }
+
+    TEST_CASE("dori::vector::emplace_back works")
+    {
+        SUBCASE("dori::vector::emplace_back initializes expectedly")
+        {
+            dori::vector<int, int> v;
+            v.reserve(5);
+            for (int i = 0; i < 5; ++i)
+                v.emplace_back(i, i * 2);
+            for (int i = 0; i < 5; ++i) {
+                REQUIRE_EQ(v.data<0>()[i], i);
+                REQUIRE_EQ(v.data<1>()[i], i * 2);
+            }
+        }
+        SUBCASE("dori::vector::emplace_back forwards expectedly")
+        {
+            SUBCASE("an rvalue reference")
+            {
+                DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+                {
+                    dori::vector<A> v;
+                    v.reserve(1);
+                    v.emplace_back(A{});
+                }
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_move_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 0);
+                REQUIRE_EQ(A_dtors, 2);
+            }
+            SUBCASE("an lvalue reference")
+            {
+                DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+                {
+                    A a;
+                    dori::vector<A> v;
+                    v.reserve(1);
+                    v.emplace_back(a);
+                }
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_copy_ctors, 1);
+                REQUIRE_EQ(A_dtors, 2);
+            }
+        }
+    }
+
+    TEST_CASE("dori::vector::push_back works")
+    {
+        dori::vector<int, int> v;
+        v.reserve(5);
+        for (int i = 0; i < 5; ++i)
+            v.push_back({i, i * 2});
+        for (int i = 0; i < 5; ++i) {
+            REQUIRE_EQ(v.data<0>()[i], i);
+            REQUIRE_EQ(v.data<1>()[i], i * 2);
+        }
     }
 
     TEST_CASE("dori::vector_cast works")

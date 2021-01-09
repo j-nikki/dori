@@ -224,13 +224,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     }
 
     template <std::size_t I>
-    constexpr DORI_inline auto data() noexcept
+    requires(I < sizeof...(Ts)) //
+        constexpr DORI_inline auto data() noexcept
     {
         return reinterpret_cast<Elem<I> *>(p_ + Offsets[I] * cap_);
     }
 
     template <std::size_t I>
-    constexpr DORI_inline auto data() const noexcept
+    requires(I < sizeof...(Ts)) //
+        constexpr DORI_inline auto data() const noexcept
     {
         return reinterpret_cast<const Elem<I> *>(p_ + Offsets[I] * cap_);
     }
@@ -265,13 +267,12 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline void reserve(std::size_t cap)
     {
-        if (cap <= cap_)
-            return;
-        if (!p_) {
-            p_   = Allocate(cap * Sz_all);
-            cap_ = cap;
-        } else
-            Re_alloc(cap);
+        DORI_assert(cap > cap_);
+        auto p = Allocate(cap * Sz_all);
+        if (p_)
+            Move_to_alloc(cap, p);
+        p_   = p;
+        cap_ = cap;
     }
 
     constexpr DORI_inline void resize(std::size_t sz)
@@ -342,28 +343,36 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         push_back(std::get<Is>(value)...);
     }
 
-    template <Tuple... Us>
-    requires(sizeof...(Ts) == sizeof...(Us)) //
-        constexpr DORI_inline iterator
-        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept((
-            noexcept(Emplacer(al_, &data<Is>()[sz_], static_cast<Us &&>(xs))) &&
-            ...))
+    constexpr DORI_inline void push_back(value_type &&value) noexcept(
+        noexcept(push_back(std::get<Is>(static_cast<value_type &&>(value))...)))
     {
-        DORI_assert(sz_ < cap_);
-        const std::tuple ptrs{&data<Is>()[sz_]...};
-        (Emplacer(al_, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
-        return {{std::get<Is>(ptrs)...}, -static_cast<intptr_t>(sz_++)};
+        push_back(std::get<Is>(static_cast<value_type &&>(value))...);
     }
 
-    template <class U1, class... Us>
-    requires(!std::is_same_v<std::piecewise_construct_t, U1> &&
-             sizeof...(Ts) + 1 == sizeof...(Us)) //
-        constexpr DORI_inline iterator emplace_back(Us &&...xs) noexcept(
-            noexcept(emplace_back(std::piecewise_construct,
-                                  std::tuple<Us>{static_cast<Us &&>(xs)}...)))
+    template <class... Us>
+    requires((std::is_constructible_v<Ts, Us &&> && ...) &&
+             sizeof...(Us) == sizeof...(Ts)) //
+        constexpr DORI_inline iterator
+        emplace_back(Us &&...xs) noexcept(noexcept(
+            emplace_back(std::piecewise_construct,
+                         std::tuple<Us &&>{static_cast<Us &&>(xs)}...)))
     {
         return emplace_back(std::piecewise_construct,
                             std::tuple<Us &&>{static_cast<Us &&>(xs)}...);
+    }
+
+    template <Tuple... Us>
+    requires(sizeof...(Ts) == sizeof...(Us)) //
+        constexpr DORI_inline iterator
+        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
+            (... && (noexcept(Emplace(al_, std::declval<Ts *>(),
+                                      std::declval<Us &&>())))))
+    {
+        DORI_assert(sz_ < cap_);
+        const std::array datas{(p_ + Offsets[Is] * cap_)...};
+        const std::tuple ptrs{&reinterpret_cast<Ts *>(datas[Is])[sz_]...};
+        (Emplace(al_, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
+        return {{std::get<Is>(ptrs)...}, -static_cast<intptr_t>(sz_++)};
     }
 
   private:
@@ -371,14 +380,14 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modification
     //
 
-    static constexpr auto Emplacer = []<class T>(auto &al_, auto p, T &&t) {
+    static constexpr auto Emplace = []<class T>(auto &al, const auto p, T &&t) {
         [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
         {
             static_assert(
                 DORI_f_ok(Al_tr::construct, al_, p,
                           std::get<Js>(static_cast<T &&>(t))...),
                 "elements not constructible with parameters to emplace()");
-            Al_tr::construct(al_, p, std::get<Js>(static_cast<T &&>(t))...);
+            Al_tr::construct(al, p, std::get<Js>(static_cast<T &&>(t))...);
         }
         (static_cast<T &&>(t),
          std::make_index_sequence<std::tuple_size_v<T>>{});
@@ -388,10 +397,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Allocation
     //
 
-    constexpr DORI_inline void Re_alloc(std::size_t cap)
+    constexpr DORI_inline void Move_to_alloc(std::size_t cap, auto p)
     {
         DORI_assert(cap >= sz_);
-        auto p = Allocate(cap * Sz_all);
         (..., [&]<class T>(T *f, T *d_f) {
             for (const auto l = f + sz_; f != l; ++f, ++d_f) {
 #ifndef NDEBUG
@@ -409,8 +417,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
             }
         }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Offsets[Is] * cap)));
         Al_tr::deallocate(al_, p_, cap_ * Sz_all);
-        p_   = p;
-        cap_ = cap;
     }
 
     constexpr DORI_inline auto Allocate(std::size_t n)
@@ -423,9 +429,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline void Destroy_to(void *p) noexcept
     {
-        static constexpr auto os = Offsets;
-        using Os_is = std::index_sequence<static_cast<std::size_t>(os[Is])...>;
-        ::dori::detail::Destroy_to<Os_is, Elem<Is>...>::fn(*this, p);
+        ::dori::detail::Destroy_to<
+            std::index_sequence<static_cast<std::size_t>(Offsets[Is])...>,
+            Elem<Is>...>::fn(*this, p);
     }
 
     //
