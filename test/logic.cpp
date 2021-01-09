@@ -1,6 +1,7 @@
 #include <dori/all.h>
 #include <numeric>
 #include <optional>
+#include <stdint.h>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
@@ -309,6 +310,21 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(C_dtors, 8);
             REQUIRE_EQ(D_dtors, 8);
         }
+    }
+
+    TEST_CASE("dori::vector orders element sequences stably")
+    {
+        dori::vector<int, float, int64_t, double> v;
+        auto &cast = dori::vector_cast<float, std::array<char, 4>, double,
+                                       std::array<char, 8>>(v);
+        v.reserve(1);
+        v.push_back({10, 20.f, 30i64, 40.});
+        auto [v0, v1, v2, v3] = v[0];
+        auto [c0, c1, c2, c3] = cast[0];
+        REQUIRE_EQ(v0, std::bit_cast<int>(c0));
+        REQUIRE_EQ(v1, std::bit_cast<float>(c1));
+        REQUIRE_EQ(v2, std::bit_cast<int64_t>(c2));
+        REQUIRE_EQ(v3, std::bit_cast<double>(c3));
     }
 
 #define DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN                         \

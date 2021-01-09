@@ -122,7 +122,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     {
     }
     constexpr DORI_inline vector_impl(vector_impl &&other) noexcept
-        : opaque_vector<Al>{std::move(other.al_), other.p_, other.sz_,
+        : opaque_vector<Al>{static_cast<Al &&>(other.al_), other.p_, other.sz_,
                             other.cap_}
     {
         other.p_   = nullptr;
@@ -153,7 +153,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept
     {
-        vector_impl{std::move(rhs)}.swap(*this);
+        vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this);
         return *this;
     }
 
@@ -438,18 +438,13 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Layout query
     //
 
-    static constexpr inline auto Offsets = [] {
-        std::array xs{std::pair{Is, sizeof(Ts)}...};
-        std::sort(xs.begin(), xs.end(),
-                  [](auto a, auto b) { return a.second > b.second; });
-        std::array<std::ptrdiff_t, sizeof...(Ts)> res{};
-        std::size_t sz = 0;
-        for (auto [a, b] : xs) {
-            res[a] = static_cast<std::ptrdiff_t>(sz);
-            sz += b;
-        }
-        return res;
-    }();
+    static constexpr inline std::array Offsets{
+        []<std::size_t I, std::size_t Sz> {
+            return static_cast<std::ptrdiff_t>(
+                (... + (Sz > sizeof(Ts) || Sz == sizeof(Ts) && I <= Is
+                            ? 0
+                            : sizeof(Ts))));
+        }.template operator()<Is, sizeof(Ts)>()...};
 };
 
 } // namespace detail
