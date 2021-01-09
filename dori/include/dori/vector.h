@@ -365,13 +365,13 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     requires(sizeof...(Ts) == sizeof...(Us)) //
         constexpr DORI_inline iterator
         emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
-            (... && (noexcept(Emplace(al_, std::declval<Ts *>(),
+            (... && (noexcept(Emplace(this, std::declval<Ts *>(),
                                       std::declval<Us &&>())))))
     {
         DORI_assert(sz_ < cap_);
         const std::array datas{(p_ + Offsets[Is] * cap_)...};
         const std::tuple ptrs{&reinterpret_cast<Ts *>(datas[Is])[sz_]...};
-        (Emplace(al_, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
+        (Emplace(this, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
         return {{std::get<Is>(ptrs)...}, -static_cast<intptr_t>(sz_++)};
     }
 
@@ -380,14 +380,22 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Modification
     //
 
-    static constexpr auto Emplace = []<class T>(auto &al, const auto p, T &&t) {
+    static constexpr auto Emplace = []<class T, class X>(auto v, X *p, T &&t) {
         [&]<std::size_t... Js>(T && t, std::index_sequence<Js...>)
         {
             static_assert(
-                DORI_f_ok(Al_tr::construct, al_, p,
+                DORI_f_ok(Al_tr::construct, v->al_, p,
                           std::get<Js>(static_cast<T &&>(t))...),
                 "elements not constructible with parameters to emplace()");
-            Al_tr::construct(al, p, std::get<Js>(static_cast<T &&>(t))...);
+            try {
+                Al_tr::construct(v->al_, p,
+                                 std::get<Js>(static_cast<T &&>(t))...);
+            } catch (...) {
+                if constexpr (std::is_same_v<std::tuple<X &&>, T>)
+                    DORI_assert(!"move constrution shan't throw");
+                v->Destroy_at(p);
+                throw;
+            }
         }
         (static_cast<T &&>(t),
          std::make_index_sequence<std::tuple_size_v<T>>{});
@@ -408,8 +416,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                     Al_tr::construct(al_, d_f, static_cast<Move_t<T>>(f[0]));
 #ifndef NDEBUG
                 } catch (...) {
-                    DORI_assert(
-                        !"disastrous error - move constrution shan't throw");
+                    DORI_assert(!"move constrution shan't throw");
                     throw;
                 }
 #endif
@@ -421,17 +428,23 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline auto Allocate(std::size_t n)
     {
-        DORI_assert(!(n % Sz_all));
+        DORI_assert(n % Sz_all == 0);
         auto p = Al_tr::allocate(al_, n);
-        DORI_assert(!(reinterpret_cast<uintptr_t>(p) % Align));
+        DORI_assert(reinterpret_cast<uintptr_t>(p) % Align == 0);
         return p;
     }
 
     constexpr DORI_inline void Destroy_to(void *p) noexcept
     {
         ::dori::detail::Destroy_to<
-            std::index_sequence<static_cast<std::size_t>(Offsets[Is])...>,
-            Elem<Is>...>::fn(*this, p);
+            std::integer_sequence<std::ptrdiff_t, Offsets[Is]...>,
+            Ts...>::fn(*this, p);
+    }
+
+    constexpr DORI_inline void Destroy_at(void *p) noexcept
+    {
+        Destroy_to(reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(p) -
+                                            reinterpret_cast<uintptr_t>(p_)));
     }
 
     //
