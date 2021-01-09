@@ -1,5 +1,10 @@
 #pragma once
 
+#include "inline.h"
+#include "vector_fwd.h"
+
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <utility>
 
@@ -25,29 +30,36 @@ struct opaque_vector {
 // their underlying layouts match).
 //
 
-template <class...>
-struct Destroy_to;
-template <std::ptrdiff_t... Ns, class... Ts>
-struct Destroy_to<std::integer_sequence<std::ptrdiff_t, Ns...>, Ts...> {
-    template <class Al>
-    static void fn(opaque_vector<Al> &v, void *p) noexcept
+template <std::ptrdiff_t... Ns>
+struct Destroy_tail_impl {
+    template <class Al, class... Ts>
+    static void fn(opaque_vector<Al> &v, void *p, std::size_t f_idx) noexcept
     {
-        const auto [f_off, sz] = [&]() -> std::pair<std::size_t, std::size_t> {
-            if (reinterpret_cast<uintptr_t>(p) >=
-                reinterpret_cast<uintptr_t>(v.p_))
-                return {0, v.sz_}; // Destroy_to: 0..sz_+1
-            p = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(v.p_) +
-                                         reinterpret_cast<uintptr_t>(p));
-            return {v.sz_, v.sz_ + 1}; // Destroy_at: sz_..sz_+1
-        }();
         (... && [&]<std::ptrdiff_t N, class T>() {
             const auto data = reinterpret_cast<T *>(v.p_ + N * v.cap_);
-            auto f          = data + f_off;
-            const auto l    = std::min(data + sz, reinterpret_cast<T *>(p));
+            auto f          = data + f_idx;
+            const auto l    = std::min(data + v.sz_, reinterpret_cast<T *>(p));
             while (f != l)
                 std::allocator_traits<Al>::destroy(v.al_, f++);
             return f == data + v.sz_ + 1;
         }.template operator()<Ns, Ts>());
+    }
+};
+
+struct Destroy_tail {
+    template <class Al, std::size_t... Is, class... Ts>
+    static constexpr DORI_inline void
+    fn(vector_impl<Al, std::index_sequence<Is...>, Ts...> &v, void *p,
+       std::size_t f_idx) noexcept
+    {
+        constexpr auto idx_sorted = [] {
+            std::array xs{std::pair{sizeof(Ts), Is}...};
+            std::sort(xs.begin(), xs.end());
+            return std::array{xs[Is].second...};
+        }();
+        using V = vector_impl<Al, std::index_sequence<Is...>, Ts...>;
+        Destroy_tail_impl<V::Offsets[idx_sorted[Is]]...>::template fn<
+            Al, typename V::template Elem<idx_sorted[Is]>...>(v, p, f_idx);
     }
 };
 

@@ -375,4 +375,82 @@ TEST_SUITE("dori::vector")
         REQUIRE_EQ(dtors, 2);
         REQUIRE_EQ(allocations, 0);
     }
+
+    TEST_CASE("dori::vector supports exceptions")
+    {
+        SUBCASE("throwing default ctor causes unwind")
+        {
+            static int until_throw = 9;
+            static int dtors       = 0;
+            static int ctors       = 0;
+            struct S {
+                struct error {
+                };
+                S()
+                {
+                    if (!until_throw--)
+                        throw error{};
+                    ++ctors;
+                }
+                ~S() { ++dtors; }
+            };
+            dori::vector<S> v;
+            REQUIRE_THROWS_AS(v.resize(10), S::error);
+            REQUIRE_EQ(ctors, 9);
+            REQUIRE_EQ(dtors, 9);
+        }
+        SUBCASE("throwing in emplace() of unary tuple does nothing")
+        {
+            static int until_throw = 9;
+            static int dtors       = 0;
+            static int ctors       = 0;
+            struct S {
+                struct error {
+                };
+                S()
+                {
+                    if (!until_throw--)
+                        throw error{};
+                    ++ctors;
+                }
+                ~S() { ++dtors; }
+            };
+            {
+                dori::vector<S> v;
+                v.reserve(10);
+                v.resize(9);
+                REQUIRE_THROWS_AS((v.emplace_back()), S::error);
+            }
+            REQUIRE_EQ(ctors, 9);
+            REQUIRE_EQ(dtors, 9);
+        }
+        SUBCASE("throwing copy ctor causes unwind")
+        {
+            static int until_throw = 9;
+            static int dtors       = 0;
+            static int def_ctors   = 0;
+            static int copy_ctors  = 0;
+            struct S {
+                struct error {
+                };
+                S() { ++def_ctors; }
+                S(const S &)
+                {
+                    if (!until_throw--)
+                        throw error{};
+                    ++copy_ctors;
+                }
+                ~S() { ++dtors; }
+            };
+            dori::vector<S> v;
+            v.resize(10);
+            REQUIRE_EQ(def_ctors, 10);
+            REQUIRE_EQ(copy_ctors, 0);
+            REQUIRE_EQ(dtors, 0);
+            REQUIRE_THROWS_AS(dori::vector<S>{v}, S::error);
+            REQUIRE_EQ(def_ctors, 10);
+            REQUIRE_EQ(copy_ctors, 9);
+            REQUIRE_EQ(dtors, 9);
+        }
+    }
 }
