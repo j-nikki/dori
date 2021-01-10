@@ -131,7 +131,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     constexpr DORI_inline vector_impl(vector_impl &&other, const Al &alloc)
         : opaque_vector<Al>{alloc, other.p_, other.sz_, other.cap_}
     {
-        if (!Al_tr::is_always_equal::value && al != other.al_) {
+        if (!Al_tr::is_always_equal::value && alloc != other.al_) {
             auto p = Allocate(cap_ * Sz_all);
             Move_to_alloc(cap_, p);
             p_ = p;
@@ -320,15 +320,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline iterator
     erase(const_iterator first, const_iterator last) noexcept(
-        +(noexcept(std::declval<Ts &>() = std::declval<Ts &&>()) && ...))
+        (noexcept(std::declval<Ts &>() = std::declval<Ts &&>()) && ...))
     {
         const auto f_i = sz_ + first.i;
         const auto n   = last.i - first.i;
         const std::tuple ptrs{(&data<Is>()[sz_] + f_i)...};
-        (..., [&](auto d_f) {
+        (..., [&]<class T>(T *d_f) {
             const auto e = d_f - first.i;
             for (auto f = d_f + n; f != e; ++f, ++d_f)
-                d_f[0] = std::move(f[0]);
+                *d_f = static_cast<T &&>(*f);
             while (d_f != e)
                 Al_tr::destroy(al_, d_f++);
         }(std::get<Is>(ptrs)));
@@ -483,7 +483,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         (..., [&]<std::size_t I, class T>(const T *f, T *d_f) {
             try {
                 for (const auto l = f + sz_; f != l; ++f, ++d_f)
-                    Al_tr::construct(al_, d_f, f[0]);
+                    Al_tr::construct(al_, d_f, *f);
             } catch (...) {
                 Destroy_tail(d_f);
                 Al_tr::deallocate(al_, p_, cap_ * Sz_all);
@@ -498,7 +498,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         (..., [&]<class T>(T *f, T *d_f) {
             for (const auto l = f + sz_; f != l; ++f, ++d_f) {
                 Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
-                                  static_cast<Move_t<T>>(f[0]));
+                                  static_cast<Move_t<T>>(*f));
                 Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f);
             }
         }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Offsets[Is] * cap)));
