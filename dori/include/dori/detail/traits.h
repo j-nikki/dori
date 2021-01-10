@@ -4,12 +4,15 @@
 
 namespace dori::detail
 {
+#define DORI_args(a, b) DORI_args_exp(a, b)
+#define DORI_args_exp(a, b) a##b
+#define DORI_f_args DORI_args(Args, __LINE__)
 #define DORI_f_ref(f)                                                          \
-    []<class... Args>(Args && ...args) noexcept(                               \
-        noexcept(f(static_cast<Args &&>(args)...)))                            \
-        ->decltype(f(static_cast<Args &&>(args)...))                           \
+    []<class... DORI_f_args>(DORI_f_args && ...args) noexcept(                 \
+        noexcept(f(static_cast<DORI_f_args &&>(args)...)))                     \
+        ->decltype(f(static_cast<DORI_f_args &&>(args)...))                    \
     {                                                                          \
-        return f(static_cast<Args &&>(args)...);                               \
+        return f(static_cast<DORI_f_args &&>(args)...);                        \
     }
 
 template <class F, class... Args>

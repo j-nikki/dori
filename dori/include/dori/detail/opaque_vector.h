@@ -11,16 +11,20 @@
 namespace dori::detail
 {
 
-#define DORI_use_no_unique_address_begin                                       \
-    __pragma(warning(push)) __pragma(warning(disable : 4648))
-#define DORI_use_no_unique_address_end __pragma(warning(pop))
+#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+#define DORI_no_unique_address                                                 \
+    __pragma(warning(push)) __pragma(warning(disable : 4648))                  \
+        [[no_unique_address]] __pragma(warning(pop))
+#else
+#define DORI_no_unique_address [[no_unique_address]]
+#endif
 
 template <class Allocator>
 struct opaque_vector {
-    DORI_use_no_unique_address_begin [[no_unique_address]] Allocator al_;
-    DORI_use_no_unique_address_end char *p_ = nullptr;
-    std::size_t sz_                         = 0;
-    std::size_t cap_                        = 0;
+    DORI_no_unique_address Allocator al_;
+    char *p_         = nullptr;
+    std::size_t sz_  = 0;
+    std::size_t cap_ = 0;
 };
 
 //

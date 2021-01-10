@@ -4,7 +4,6 @@
 #include "vector_fwd.h"
 
 #include <algorithm>
-#include <boost/align/aligned_allocator.hpp>
 #include <memory>
 #include <type_traits>
 
