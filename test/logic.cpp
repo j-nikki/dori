@@ -332,18 +332,14 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("dori::vector supports custom allocators")
     {
-        static std::size_t copy_ctors  = 0;
-        static std::size_t def_ctors   = 0;
-        static std::size_t dtors       = 0;
+        DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         static std::size_t allocations = 0;
-        struct allocator {
-            using value_type = char;
-            allocator() noexcept { ++def_ctors; }
-            allocator(allocator &&) = delete;
-            allocator &operator=(const allocator &) = delete;
-            allocator &operator=(allocator &&) = delete;
-            allocator(const allocator &) noexcept { ++copy_ctors; }
-            ~allocator() { ++dtors; }
+        struct Al : A {
+            using A::A;
+            using is_always_equal = std::true_type;
+            using value_type      = char;
+            bool operator==(const Al &) const { return true; }
+            bool operator!=(const Al &) const { return false; }
             char *allocate(std::size_t n)
             {
                 allocations += n;
@@ -358,21 +354,56 @@ TEST_SUITE("dori::vector")
                 delete[](char *) p;
                 DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
             }
-        } al;
+        };
         {
-            auto v = dori::make_vector<int>(al);
-            v.reserve(2);
-            v.resize(2);
-            REQUIRE_EQ(allocations, v.capacity() * sizeof(int));
+            dori::vector_al<Al, int> v;
+            REQUIRE_EQ(allocations, 0);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(A_copy_ctors, 0);
+            REQUIRE_EQ(A_move_ctors, 0);
+            REQUIRE_EQ(A_dtors, 0);
 
-            auto v2 = v;
-            REQUIRE_EQ(allocations,
-                       (v.capacity() + v2.capacity()) * sizeof(int));
+            v.reserve(2);
+            REQUIRE_EQ(allocations, sizeof(int) * 2);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(A_copy_ctors, 0);
+            REQUIRE_EQ(A_move_ctors, 0);
+            REQUIRE_EQ(A_dtors, 0);
+
+            v.resize(2);
+            REQUIRE_EQ(allocations, sizeof(int) * 2);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(A_copy_ctors, 0);
+            REQUIRE_EQ(A_move_ctors, 0);
+            REQUIRE_EQ(A_dtors, 0);
+
+            auto v2{v};
+            REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(A_copy_ctors, 1);
+            REQUIRE_EQ(A_move_ctors, 0);
+            REQUIRE_EQ(A_dtors, 0);
+            REQUIRE_EQ(v.size(), 2);
+            REQUIRE_EQ(v.capacity(), 2);
+            REQUIRE_EQ(v2.size(), 2);
+            REQUIRE_EQ(v2.capacity(), 2);
+
+            auto v3{std::move(v)};
+            REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
+            REQUIRE_EQ(A_def_ctors, 1);
+            REQUIRE_EQ(A_copy_ctors, 1);
+            REQUIRE_EQ(A_move_ctors, 1);
+            REQUIRE_EQ(A_dtors, 0);
+            REQUIRE_EQ(v.size(), 0);
+            REQUIRE_EQ(v.capacity(), 0);
+            REQUIRE_EQ(v3.size(), 2);
+            REQUIRE_EQ(v3.capacity(), 2);
         }
-        REQUIRE_EQ(def_ctors, 1);
-        REQUIRE_EQ(copy_ctors, 2);
-        REQUIRE_EQ(dtors, 2);
         REQUIRE_EQ(allocations, 0);
+        REQUIRE_EQ(A_def_ctors, 1);
+        REQUIRE_EQ(A_copy_ctors, 1);
+        REQUIRE_EQ(A_move_ctors, 1);
+        REQUIRE_EQ(A_dtors, 3);
     }
 
     TEST_CASE("dori::vector supports exceptions")

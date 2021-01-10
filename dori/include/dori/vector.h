@@ -116,12 +116,11 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         : opaque_vector<Al>{}
     {
     }
-    constexpr DORI_inline vector_impl(const Al &al) noexcept(noexcept(Al{al}))
-        : opaque_vector<Al>{al}
+    constexpr DORI_inline vector_impl(const Al &alloc) noexcept
+        : opaque_vector<Al>{alloc}
     {
     }
-    constexpr DORI_inline vector_impl(vector_impl &&other) noexcept(noexcept(Al{
-        static_cast<Al &&>(other.al_)}))
+    constexpr DORI_inline vector_impl(vector_impl &&other) noexcept
         : opaque_vector<Al>{static_cast<Al &&>(other.al_), other.p_, other.sz_,
                             other.cap_}
     {
@@ -129,36 +128,51 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         other.sz_  = 0;
         other.cap_ = 0;
     }
-    constexpr DORI_inline vector_impl(const vector_impl &other) noexcept(
-        noexcept(opaque_vector<Al>{other}) &&noexcept(Allocate({})) &&
-        (... &&noexcept(Al_tr::construct(al_, std::declval<const Ts *>(),
-                                         std::declval<Ts *>()))))
-        : opaque_vector<Al>{other}
+    constexpr DORI_inline vector_impl(vector_impl &&other, const Al &alloc)
+        : opaque_vector<Al>{alloc, other.p_, other.sz_, other.cap_}
     {
-        p_ = Allocate(cap_ * Sz_all);
-        (..., [&]<std::size_t I, class T>(const T *f, T *d_f) {
-            try {
-                for (const auto l = f + sz_; f != l; ++f, ++d_f)
-                    Al_tr::construct(al_, d_f, f[0]);
-            } catch (...) {
-                Destroy_tail(d_f);
-                Al_tr::deallocate(al_, p_, cap_ * Sz_all);
-                throw;
-            }
-        }.template operator()<Is>(other.data<Is>(), data<Is>()));
+        if (!Al_tr::is_always_equal::value && al != other.al_) {
+            auto p = Allocate(cap_ * Sz_all);
+            Move_to_alloc(cap_, p);
+            p_ = p;
+        }
+        other.p_   = nullptr;
+        other.sz_  = 0;
+        other.cap_ = 0;
+    }
+    constexpr DORI_inline vector_impl(const vector_impl &other)
+        : opaque_vector<Al>{
+              Al_tr::select_on_container_copy_construction(other.al_),
+              {},
+              other.sz_,
+              other.cap_}
+    {
+        Copy_from(other);
+    }
+    constexpr DORI_inline vector_impl(const vector_impl &other, const Al &alloc)
+        : opaque_vector<Al>{alloc, {}, other.sz_, other.cap_}
+    {
+        Copy_from(other);
     }
 
-    constexpr DORI_inline vector_impl &operator=(
-        const vector_impl &rhs) noexcept(noexcept(vector_impl{rhs}.swap(*this)))
+    constexpr DORI_inline vector_impl &operator=(const vector_impl &rhs)
     {
-        vector_impl{rhs}.swap(*this);
+        const Al &al = Al_tr::propagate_on_container_copy_assignment::value
+                           ? rhs.al_
+                           : al_;
+        vector_impl{rhs, al}.swap(*this);
         return *this;
     }
 
     constexpr DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept(
-        noexcept(vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this)))
+        Al_tr::propagate_on_container_move_assignment::value ||
+        Al_tr::is_always_equal::value)
     {
-        vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this);
+        if constexpr (Al_tr::propagate_on_container_move_assignment::value ||
+                      Al_tr::is_always_equal::value)
+            vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this);
+        else
+            vector_impl{static_cast<vector_impl &&>(rhs, al_)}.swap(*this);
         return *this;
     }
 
@@ -304,10 +318,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         sz_ = 0;
     }
 
-    constexpr DORI_inline iterator erase(
-        const_iterator first,
-        const_iterator last) noexcept((std::is_nothrow_move_assignable_v<Ts> &&
-                                       ...))
+    constexpr DORI_inline iterator
+    erase(const_iterator first, const_iterator last) noexcept(
+        +(noexcept(std::declval<Ts &>() = std::declval<Ts &&>()) && ...))
     {
         const auto f_i = sz_ + first.i;
         const auto n   = last.i - first.i;
@@ -411,8 +424,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }
     }
 
-    constexpr DORI_inline void swap(vector_impl &other) noexcept
+    constexpr DORI_inline void swap(vector_impl &other) noexcept(
+        Al_tr::propagate_on_container_swap::value ||
+        Al_tr::is_always_equal::value)
     {
+        if constexpr (Al_tr::propagate_on_container_swap::value) {
+            using std::swap;
+            swap(al_, other.al_);
+        } else if constexpr (Al_tr::is_always_equal::value)
+            DORI_assert(al_ == other.al_);
         std::swap(p_, other.p_);
         std::swap(sz_, other.sz_);
         std::swap(cap_, other.cap_);
@@ -456,6 +476,21 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     //
     // Allocation
     //
+
+    constexpr DORI_inline void Copy_from(const vector_impl &v)
+    {
+        p_ = Allocate(cap_ * Sz_all);
+        (..., [&]<std::size_t I, class T>(const T *f, T *d_f) {
+            try {
+                for (const auto l = f + sz_; f != l; ++f, ++d_f)
+                    Al_tr::construct(al_, d_f, f[0]);
+            } catch (...) {
+                Destroy_tail(d_f);
+                Al_tr::deallocate(al_, p_, cap_ * Sz_all);
+                throw;
+            }
+        }.template operator()<Is>(v.data<Is>(), data<Is>()));
+    }
 
     constexpr DORI_inline void Move_to_alloc(std::size_t cap, auto p) noexcept
     {
