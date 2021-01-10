@@ -475,4 +475,30 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(dtors, 9);
         }
     }
+    TEST_CASE("dori::vector::shrink_to_fit works") {
+        DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+        static_assert(!std::is_trivially_copy_constructible_v<A>);
+        {
+            dori::vector<A> v;
+            v.reserve(10);
+            v.resize(8);
+            REQUIRE_EQ(A_def_ctors, 8);
+            REQUIRE_EQ(A_move_ctors, 0);
+            REQUIRE_EQ(A_copy_ctors, 0);
+            REQUIRE_EQ(A_dtors, 0);
+            REQUIRE_EQ(v.size(), 8);
+            REQUIRE_EQ(v.capacity(), 10);
+            v.shrink_to_fit();
+            REQUIRE_EQ(A_def_ctors, 8);
+            REQUIRE_EQ(A_move_ctors, 8);
+            REQUIRE_EQ(A_copy_ctors, 0);
+            REQUIRE_EQ(A_dtors, 8);
+            REQUIRE_EQ(v.size(), 8);
+            REQUIRE_EQ(v.capacity(), 8);
+        }
+        REQUIRE_EQ(A_def_ctors, 8);
+        REQUIRE_EQ(A_move_ctors, 8);
+        REQUIRE_EQ(A_copy_ctors, 0);
+        REQUIRE_EQ(A_dtors, 16);
+    }
 }

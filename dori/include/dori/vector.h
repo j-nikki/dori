@@ -203,18 +203,18 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         DORI_assert(sz_ > 0);
         return *begin();
     }
-    constexpr DORI_inline const_reference front() const
+    constexpr DORI_inline const_reference front() const noexcept
     {
         DORI_assert(sz_ > 0);
         return *begin();
     }
 
-    constexpr DORI_inline reference back()
+    constexpr DORI_inline reference back() noexcept
     {
         DORI_assert(sz_ > 0);
         return *operator[](sz_ - 1);
     }
-    constexpr DORI_inline const_reference back() const
+    constexpr DORI_inline const_reference back() const noexcept
     {
         DORI_assert(sz_ > 0);
         return *operator[](sz_ - 1);
@@ -275,8 +275,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         cap_ = cap;
     }
 
-    constexpr DORI_inline void shrink_to_fit() const
-        noexcept(noexcept(Move_to_alloc(sz_, Allocate({}))))
+    constexpr DORI_inline void
+    shrink_to_fit() noexcept(noexcept(Move_to_alloc(sz_, Allocate({}))))
     {
         DORI_assert(sz_); // use '= {}' to empty
         auto p = Allocate(sz_ * Sz_all);
