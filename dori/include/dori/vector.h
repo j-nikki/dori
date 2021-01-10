@@ -165,10 +165,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     constexpr DORI_inline ~vector_impl()
     {
         if (p_) {
-            (..., [&]<class T>(T *f, T *l) {
-                while (f != l)
-                    Al_tr::destroy(al_, f++);
-            }(data<Is>(), data<Is>() + sz_));
+            clear();
             Al_tr::deallocate(al_, p_, cap_ * Sz_all);
         }
     }
@@ -297,6 +294,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     //
     // Modifiers
     //
+
+    constexpr DORI_inline void clear() noexcept
+    {
+        (..., [&]<class T>(T *f, T *l) {
+            while (f != l)
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f++);
+        }(data<Is>(), data<Is>() + sz_));
+        sz_ = 0;
+    }
 
     constexpr DORI_inline iterator erase(
         const_iterator first,
