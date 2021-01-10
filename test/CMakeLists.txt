@@ -10,10 +10,6 @@ add_custom_target(
   COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
   USES_TERMINAL)
 
-# W4 and WX help catching bugs at compile time
-string(REPLACE "/W3" "/W4" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX")
-
 # Use doctest, a single-header testing library
 set(DOCTEST_INCLUDE_DIR ${CMAKE_BINARY_DIR}/doctest)
 if(NOT EXISTS "${DOCTEST_INCLUDE_DIR}/doctest.h")
@@ -28,13 +24,13 @@ file(GLOB_RECURSE UNIT_TESTS "*.cpp")
 foreach(ut IN LISTS UNIT_TESTS)
 
   # Target name will be the extensionless file name
-  string(REGEX MATCH "([^\\/]+)\.cpp$" _ ${ut})
-  set(target ${CMAKE_MATCH_1})
+  get_filename_component(target ${ut} NAME_WLE)
 
   # Target is a test and dependency on tests
   add_executable(${target} EXCLUDE_FROM_ALL "${ut}")
   add_test(${target} ${target})
   target_link_libraries(${target} dori)
+  target_compile_options(${target} PRIVATE /WX /W4)
   target_include_directories(${target} PUBLIC ${DOCTEST_INCLUDE_DIR})
   add_dependencies(dori-tests ${target})
 
