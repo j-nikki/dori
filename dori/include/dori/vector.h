@@ -3,16 +3,11 @@
 #include "detail/assert.h"
 #include "detail/opaque_vector.h"
 #include "detail/traits.h"
+#include "detail/unsafe.h"
 #include "detail/vector_caster.h"
 #include "detail/vector_maker.h"
 
-#include <algorithm>
-#include <array>
-#include <boost/align/aligned_allocator.hpp>
-#include <memory>
-#include <stdexcept>
 #include <tuple>
-#include <type_traits>
 
 namespace dori
 {
@@ -47,9 +42,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     static constexpr auto Sz_all = (sizeof(Ts) + ...);
     static constexpr auto Align  = std::max({alignof(Ts)...});
 
-#define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_const_iterator          \
+#define DORI_vector_iterator_convop_refconv_and_ptrsty_const_iterator          \
     std::tuple<const Ts *...>
-#define DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_iterator                \
+#define DORI_vector_iterator_convop_refconv_and_ptrsty_iterator                \
     constexpr DORI_inline operator const_iterator() const noexcept             \
     {                                                                          \
         return {ptrs, i};                                                      \
@@ -57,7 +52,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     std::tuple<Ts *...>
 
     struct End_iterator;
-#define DORI_VECTOR_ITERATOR(It, Ref)                                          \
+#define DORI_vector_iterator(It, Ref)                                          \
     struct It {                                                                \
         using difference_type   = std::ptrdiff_t;                              \
         using value_type        = vector_impl::value_type;                     \
@@ -70,6 +65,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }                                                                      \
         constexpr DORI_inline Ref operator*() noexcept                         \
         {                                                                      \
+            DORI_assert(i <= 0);                                               \
             return {std::get<Is>(ptrs)[i]...};                                 \
         }                                                                      \
         constexpr DORI_inline bool operator==(const It &it) const noexcept     \
@@ -88,7 +84,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         {                                                                      \
             return i != 0;                                                     \
         }                                                                      \
-        DORI_VECTOR_ITERATOR_CONVOP_REFCONV_AND_PTRSTY_##It ptrs;              \
+        DORI_vector_iterator_convop_refconv_and_ptrsty_##It ptrs;              \
         std::ptrdiff_t i;                                                      \
     };
 
@@ -97,11 +93,10 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     using reference       = std::tuple<Ts &...>;
     using const_reference = std::tuple<const Ts &...>;
     using allocator_type  = Al;
-    DORI_VECTOR_ITERATOR(const_iterator, const_reference)
-    DORI_VECTOR_ITERATOR(iterator, reference)
+    DORI_vector_iterator(const_iterator, const_reference)
+        DORI_vector_iterator(iterator, reference)
 
-  private:
-    struct End_iterator {
+            private : struct End_iterator {
         constexpr DORI_inline operator iterator() const noexcept
         {
             return {.i = 0};
@@ -427,8 +422,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                           std::get<Js>(static_cast<T &&>(t))...),
                 "elements not constructible with parameters to emplace()");
             if constexpr (std::is_same_v<std::tuple<X &&>, T>) {
-                v->Call_unsafe(DORI_f_ref(Al_tr::construct), v->al_, p,
-                               std::get<Js>(static_cast<T &&>(t))...);
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), v->al_, p,
+                                  std::get<Js>(static_cast<T &&>(t))...);
             } else {
                 try {
                     Al_tr::construct(v->al_, p,
@@ -448,29 +443,14 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Allocation
     //
 
-    template <class F, class... Args>
-    constexpr DORI_inline void Call_unsafe(F &&f, Args &&...args) noexcept
-    {
-#if DORI_DEBUG
-        try {
-#endif
-            static_cast<F &&>(f)(static_cast<Args &&>(args)...);
-#if DORI_DEBUG
-        } catch (...) {
-            DORI_assert(!"the dori library doesn't support this operation "
-                         "throwing - please make your operation non-throwing");
-        }
-#endif
-    }
-
     constexpr DORI_inline void Move_to_alloc(std::size_t cap, auto p) noexcept
     {
         DORI_assert(cap >= sz_);
         (..., [&]<class T>(T *f, T *d_f) {
             for (const auto l = f + sz_; f != l; ++f, ++d_f) {
-                Call_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
-                            static_cast<Move_t<T>>(f[0]));
-                Call_unsafe(DORI_f_ref(Al_tr::destroy), al_, f);
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
+                                  static_cast<Move_t<T>>(f[0]));
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f);
             }
         }(data<Is>(), reinterpret_cast<Elem<Is> *>(p + Offsets[Is] * cap)));
     }
