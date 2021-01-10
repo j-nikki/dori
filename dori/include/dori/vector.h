@@ -5,6 +5,7 @@
 #include "detail/traits.h"
 #include "detail/unsafe.h"
 #include "detail/vector_caster.h"
+#include "detail/vector_layout.h"
 #include "detail/vector_maker.h"
 
 #include <tuple>
@@ -14,16 +15,6 @@ namespace dori
 
 namespace detail
 {
-
-template <class T>
-concept Tuple = requires
-{
-    typename std::tuple_size<T>;
-};
-
-template <class T>
-using Move_t =
-    std::conditional_t<std::is_trivially_copy_constructible_v<T>, T &, T &&>;
 
 template <class Al, std::size_t... Is, class... Ts>
 class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
@@ -39,8 +30,9 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     template <std::size_t I>
     using Elem = std::tuple_element_t<I, std::tuple<Ts...>>;
 
-    static constexpr auto Sz_all = (sizeof(Ts) + ...);
-    static constexpr auto Align  = std::max({alignof(Ts)...});
+    static constexpr inline auto Sz_all  = (sizeof(Ts) + ...);
+    static constexpr inline auto Align   = std::max({alignof(Ts)...});
+    static constexpr inline auto Offsets = detail::Offsets<Ts...>;
 
 #define DORI_vector_iterator_convop_refconv_and_ptrsty_const_iterator          \
     std::tuple<const Ts *...>
@@ -517,18 +509,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     {
         Destroy_tail::fn(*this, p, f);
     }
-
-    //
-    // Layout query
-    //
-
-    static constexpr inline std::array Offsets{
-        []<std::size_t I, std::size_t Sz> {
-            return static_cast<std::ptrdiff_t>(
-                (... + (Sz > sizeof(Ts) || Sz == sizeof(Ts) && I <= Is
-                            ? 0
-                            : sizeof(Ts))));
-        }.template operator()<Is, sizeof(Ts)>()...};
 };
 
 } // namespace detail

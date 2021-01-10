@@ -330,7 +330,7 @@ TEST_SUITE("dori::vector")
     __pragma(warning(push)) __pragma(warning(disable : 26409))
 #define DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END __pragma(warning(pop))
 
-    TEST_CASE("dori::vector supports custom allocators")
+    TEST_CASE("dori::vector satisfies AllocatorAwareContainer")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         static std::size_t allocations = 0;
@@ -357,7 +357,18 @@ TEST_SUITE("dori::vector")
         };
         {
             dori::vector_al<Al, int> v;
-            REQUIRE_EQ(allocations, 0);
+            using V = decltype(v);
+#define LOGIC_check_expr(r, E, ...)                                            \
+    static_assert(                                                             \
+        std::is_invocable_r_v<r, decltype(DORI_f_ref(E)), __VA_ARGS__>);
+
+            static_assert(std::is_same_v<V::allocator_type, Al>);
+            LOGIC_check_expr(Al, v.get_allocator);
+            LOGIC_check_expr(V &, v.operator=, V &);
+            LOGIC_check_expr(V &, v.operator=, const V &&);
+            LOGIC_check_expr(V &, v.operator=, V &&);
+            LOGIC_check_expr(void, v.swap, V &);
+
             REQUIRE_EQ(A_def_ctors, 1);
             REQUIRE_EQ(A_copy_ctors, 0);
             REQUIRE_EQ(A_move_ctors, 0);
