@@ -112,13 +112,16 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     // Member functions
     //
 
-    constexpr DORI_inline vector_impl() noexcept : opaque_vector<Al>{} {}
-    constexpr DORI_inline
-    vector_impl(const Al &al) noexcept(noexcept(opaque_vector<Al>{al}))
+    constexpr DORI_inline vector_impl() noexcept(noexcept(Al{}))
+        : opaque_vector<Al>{}
+    {
+    }
+    constexpr DORI_inline vector_impl(const Al &al) noexcept(noexcept(Al{al}))
         : opaque_vector<Al>{al}
     {
     }
-    constexpr DORI_inline vector_impl(vector_impl &&other) noexcept
+    constexpr DORI_inline vector_impl(vector_impl &&other) noexcept(noexcept(Al{
+        static_cast<Al &&>(other.al_)}))
         : opaque_vector<Al>{static_cast<Al &&>(other.al_), other.p_, other.sz_,
                             other.cap_}
     {
@@ -126,7 +129,10 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         other.sz_  = 0;
         other.cap_ = 0;
     }
-    constexpr DORI_inline vector_impl(const vector_impl &other)
+    constexpr DORI_inline vector_impl(const vector_impl &other) noexcept(
+        noexcept(opaque_vector<Al>{other}) &&noexcept(Allocate({})) &&
+        (... &&noexcept(Al_tr::construct(al_, std::declval<const Ts *>(),
+                                         std::declval<Ts *>()))))
         : opaque_vector<Al>{other}
     {
         p_ = Allocate(cap_ * Sz_all);
@@ -142,13 +148,15 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }.template operator()<Is>(other.data<Is>(), data<Is>()));
     }
 
-    constexpr DORI_inline vector_impl &operator=(const vector_impl &rhs)
+    constexpr DORI_inline vector_impl &operator=(
+        const vector_impl &rhs) noexcept(noexcept(vector_impl{rhs}.swap(*this)))
     {
         vector_impl{rhs}.swap(*this);
         return *this;
     }
 
-    constexpr DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept
+    constexpr DORI_inline vector_impl &operator=(vector_impl &&rhs) noexcept(
+        noexcept(vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this)))
     {
         vector_impl{static_cast<vector_impl &&>(rhs)}.swap(*this);
         return *this;
