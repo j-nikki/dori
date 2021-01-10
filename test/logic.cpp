@@ -429,10 +429,15 @@ TEST_SUITE("dori::vector")
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(C)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(D)
+            static bool do_throw = true;
             struct S {
                 struct error {
                 };
-                S() { throw error{}; }
+                S()
+                {
+                    if (do_throw)
+                        throw error{};
+                }
             };
             dori::vector<A, B, S, C, D> v;
             v.reserve(1);
@@ -445,6 +450,22 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(B_dtors, 1);
             REQUIRE_EQ(C_dtors, 0);
             REQUIRE_EQ(D_dtors, 0);
+            SUBCASE("... emplacees only")
+            {
+                do_throw = false;
+                v.reserve(2);
+                v.resize(1);
+                do_throw = true;
+                REQUIRE_THROWS_AS(v.emplace_back(), S::error);
+                REQUIRE_EQ(A_def_ctors, 1 + 2);
+                REQUIRE_EQ(B_def_ctors, 1 + 2);
+                REQUIRE_EQ(C_def_ctors, 0 + 1);
+                REQUIRE_EQ(D_def_ctors, 0 + 1);
+                REQUIRE_EQ(A_dtors, 1 + 1);
+                REQUIRE_EQ(B_dtors, 1 + 1);
+                REQUIRE_EQ(C_dtors, 0 + 0);
+                REQUIRE_EQ(D_dtors, 0 + 0);
+            }
         }
         SUBCASE("throwing from copy ctor unwinds")
         {
@@ -476,7 +497,8 @@ TEST_SUITE("dori::vector")
         }
     }
 
-    TEST_CASE("dori::vector::shrink_to_fit works") {
+    TEST_CASE("dori::vector::shrink_to_fit works")
+    {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
         static_assert(!std::is_trivially_copy_constructible_v<A>);
         {
@@ -503,7 +525,8 @@ TEST_SUITE("dori::vector")
         REQUIRE_EQ(A_dtors, 16);
     }
 
-    TEST_CASE("dori::vector::clear works") {
+    TEST_CASE("dori::vector::clear works")
+    {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A);
         {
             dori::vector<A> v;
