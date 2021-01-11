@@ -8,7 +8,7 @@ namespace dori::detail
 {
 template <std::size_t... Is, std::size_t... Szs>
 static constexpr auto Get_offsets(std::index_sequence<Is...>,
-                                  std::index_sequence<Szs...>)
+                                  std::index_sequence<Szs...>) noexcept
 {
     return std::array{[](std::size_t I, std::size_t Sz) {
         return static_cast<std::ptrdiff_t>(

@@ -1,10 +1,54 @@
 #include <dori/all.h>
+#include <functional>
 #include <numeric>
 #include <optional>
 #include <stdint.h>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
+
+using namespace std;
+
+//
+// Assert conformance with AllocatorAwareContainer
+// https://en.cppreference.com/w/cpp/named_req/AllocatorAwareContainer
+//
+
+using C = dori::vector<int>;
+static_assert(regular<C>);
+static_assert(swappable<C>);
+static_assert(destructible<C>);
+// static_assert(same_as<C::allocator_type::value_type, C::value_type>);
+// static_assert(same_as<C::reference, C::value_type &>);
+static_assert(convertible_to<C::iterator, C::const_iterator>);
+static_assert(signed_integral<C::difference_type>);
+static_assert(
+    same_as<iterator_traits<C::iterator>::difference_type, C::difference_type>);
+static_assert(same_as<iterator_traits<C::const_iterator>::difference_type,
+                      C::difference_type>);
+static_assert(unsigned_integral<C::size_type>);
+
+//
+// Check member functions
+//
+
+#define LOGIC_check_memfn(r, f, v, ...)                                        \
+    static_assert(is_invocable_r_v<r, decltype(DORI_f_ref(declval<v>().f)),    \
+                                   ##__VA_ARGS__>)
+#define LOGIC_check_nonmemfn(r, f, ...)                                        \
+    static_assert(is_invocable_r_v<r, decltype(DORI_f_ref(f)), ##__VA_ARGS__>)
+LOGIC_check_memfn(C::allocator_type, get_allocator, C &);
+LOGIC_check_memfn(C::iterator, begin, C &);
+LOGIC_check_memfn(C::iterator, end, C &);
+LOGIC_check_memfn(C::const_iterator, cbegin, C &);
+LOGIC_check_memfn(C::const_iterator, cend, C &);
+LOGIC_check_memfn(C::const_iterator, begin, const C &);
+LOGIC_check_memfn(C::const_iterator, end, const C &);
+LOGIC_check_memfn(C::const_iterator, cbegin, const C &);
+LOGIC_check_memfn(C::const_iterator, cend, const C &);
+LOGIC_check_memfn(C::size_type, size, C &);
+// LOGIC_check_memfn(C::size_type, max_size, C &);
+LOGIC_check_memfn(bool, empty, C &);
 
 TEST_SUITE("dori::vector")
 {
@@ -104,9 +148,9 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("dori::vector::erase erases expectedly")
     {
-        static std::size_t nctors = 0;
-        static std::size_t nmoves = 0;
-        static std::size_t ndtors = 0;
+        static size_t nctors = 0;
+        static size_t nmoves = 0;
+        static size_t ndtors = 0;
         struct S {
             S() { ++nctors; }
             S(S &&) { ++nmoves; }
@@ -128,7 +172,7 @@ TEST_SUITE("dori::vector")
         REQUIRE_EQ(nctors, 8);
         REQUIRE_EQ(nmoves, 0);
         REQUIRE_EQ(ndtors, 0);
-        v.erase(v.begin(), std::next(v.begin(), 4));
+        v.erase(v.begin(), next(v.begin(), 4));
         REQUIRE_EQ(v.size(), 4);
         REQUIRE_EQ(nctors, 8);
         REQUIRE_EQ(nmoves, 4);
@@ -143,35 +187,33 @@ TEST_SUITE("dori::vector")
     TEST_CASE("dori::vector works with algorithms")
     {
         dori::vector<int> v;
-        using It      = decltype(v)::iterator;
-        const auto eq = [](auto a, auto b) {
-            return std::get<0>(a) == std::get<0>(b);
-        };
-        const auto even = [](auto x) { return std::get<0>(x) % 2 == 0; };
+        using It        = decltype(v)::iterator;
+        const auto eq   = [](auto a, auto b) { return get<0>(a) == get<0>(b); };
+        const auto even = [](auto x) { return get<0>(x) % 2 == 0; };
 
         v.reserve(8);
-        std::tuple<int> nums[]{{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}};
-        std::copy(&nums[0], &nums[8], std::back_inserter(v));
-        REQUIRE(std::equal<It>(v.begin(), v.end(), &nums[0], eq));
+        tuple<int> nums[]{{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}};
+        copy(&nums[0], &nums[8], back_inserter(v));
+        REQUIRE(equal<It>(v.begin(), v.end(), &nums[0], eq));
 
-        v.erase(std::remove_if<It>(v.begin(), v.end(), even), v.end());
-        std::tuple<int> odds[]{{1}, {3}, {5}, {7}};
-        REQUIRE_EQ(v.size(), std::size(odds));
-        REQUIRE(std::equal<It>(v.begin(), v.end(), odds, eq));
+        v.erase(remove_if<It>(v.begin(), v.end(), even), v.end());
+        tuple<int> odds[]{{1}, {3}, {5}, {7}};
+        REQUIRE_EQ(v.size(), size(odds));
+        REQUIRE(equal<It>(v.begin(), v.end(), odds, eq));
 
         decltype(v) v2;
         v2.reserve(v.size());
-        std::transform<It>(v.begin(), v.end(), odds, std::back_inserter(v2),
-                           [](auto a, auto b) -> std::tuple<int> {
-                               return {std::get<0>(a) + std::get<0>(b)};
-                           });
-        std::tuple<int> odds_doubled[]{{2}, {6}, {10}, {14}};
-        REQUIRE_EQ(v2.size(), std::size(odds_doubled));
-        REQUIRE(std::equal<It>(v2.begin(), v2.end(), odds_doubled, eq));
+        transform<It>(v.begin(), v.end(), odds, back_inserter(v2),
+                      [](auto a, auto b) -> tuple<int> {
+                          return {get<0>(a) + get<0>(b)};
+                      });
+        tuple<int> odds_doubled[]{{2}, {6}, {10}, {14}};
+        REQUIRE_EQ(v2.size(), size(odds_doubled));
+        REQUIRE(equal<It>(v2.begin(), v2.end(), odds_doubled, eq));
 
-        const int sum = std::reduce<It>(
-            ++v2.begin(), v2.end(), std::get<0>(v2[0]),
-            [](int acc, auto cur) { return acc + std::get<0>(cur); });
+        const int sum =
+            reduce<It>(++v2.begin(), v2.end(), get<0>(v2[0]),
+                       [](int acc, auto cur) { return acc + get<0>(cur); });
         REQUIRE_EQ(sum, 2 + 6 + 10 + 14);
     }
 
@@ -193,7 +235,7 @@ TEST_SUITE("dori::vector")
 
             SUBCASE("dori::vector can be move-constructed")
             {
-                auto v3 = std::move(v);
+                auto v3 = move(v);
                 REQUIRE_EQ(v.size(), 0);
                 REQUIRE_EQ(v3.size(), v2.size());
                 REQUIRE_EQ(A_def_ctors, 8);
@@ -314,40 +356,40 @@ TEST_SUITE("dori::vector")
     TEST_CASE("dori::vector orders element sequences stably")
     {
         dori::vector<int, float, int64_t, double> v;
-        auto &cast = dori::vector_cast<float, std::array<char, 4>, double,
-                                       std::array<char, 8>>(v);
+        auto &cast =
+            dori::vector_cast<float, array<char, 4>, double, array<char, 8>>(v);
         v.reserve(1);
         v.push_back({10, 20.f, 30i64, 40.});
         auto [v0, v1, v2, v3] = v[0];
         auto [c0, c1, c2, c3] = cast[0];
-        REQUIRE_EQ(v0, std::bit_cast<int>(c0));
-        REQUIRE_EQ(v1, std::bit_cast<float>(c1));
-        REQUIRE_EQ(v2, std::bit_cast<int64_t>(c2));
-        REQUIRE_EQ(v3, std::bit_cast<double>(c3));
+        REQUIRE_EQ(v0, bit_cast<int>(c0));
+        REQUIRE_EQ(v1, bit_cast<float>(c1));
+        REQUIRE_EQ(v2, bit_cast<int64_t>(c2));
+        REQUIRE_EQ(v3, bit_cast<double>(c3));
     }
 
 #define DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN                         \
     __pragma(warning(push)) __pragma(warning(disable : 26409))
 #define DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END __pragma(warning(pop))
 
-    TEST_CASE("dori::vector satisfies AllocatorAwareContainer")
+    TEST_CASE("dori::vector supports custom allocators")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
-        static std::size_t allocations = 0;
+        static size_t allocations = 0;
         struct Al : A {
             using A::A;
-            using is_always_equal = std::true_type;
+            using is_always_equal = true_type;
             using value_type      = char;
             bool operator==(const Al &) const { return true; }
             bool operator!=(const Al &) const { return false; }
-            char *allocate(std::size_t n)
+            char *allocate(size_t n)
             {
                 allocations += n;
                 DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
                 return new char[n];
                 DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
             }
-            void deallocate(void *p, std::size_t n) noexcept
+            void deallocate(void *p, size_t n) noexcept
             {
                 allocations -= n;
                 DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
@@ -355,20 +397,9 @@ TEST_SUITE("dori::vector")
                 DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
             }
         };
+
         {
             dori::vector_al<Al, int> v;
-            using V = decltype(v);
-#define LOGIC_check_expr(r, E, ...)                                            \
-    static_assert(                                                             \
-        std::is_invocable_r_v<r, decltype(DORI_f_ref(E)), __VA_ARGS__>);
-
-            static_assert(std::is_same_v<V::allocator_type, Al>);
-            LOGIC_check_expr(Al, v.get_allocator);
-            LOGIC_check_expr(V &, v.operator=, V &);
-            LOGIC_check_expr(V &, v.operator=, const V &&);
-            LOGIC_check_expr(V &, v.operator=, V &&);
-            LOGIC_check_expr(void, v.swap, V &);
-
             REQUIRE_EQ(A_def_ctors, 1);
             REQUIRE_EQ(A_copy_ctors, 0);
             REQUIRE_EQ(A_move_ctors, 0);
@@ -399,7 +430,7 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(v2.size(), 2);
             REQUIRE_EQ(v2.capacity(), 2);
 
-            auto v3{std::move(v)};
+            auto v3{move(v)};
             REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
             REQUIRE_EQ(A_def_ctors, 1);
             REQUIRE_EQ(A_copy_ctors, 1);
@@ -542,7 +573,7 @@ TEST_SUITE("dori::vector")
     TEST_CASE("dori::vector::shrink_to_fit works")
     {
         DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
-        static_assert(!std::is_trivially_copy_constructible_v<A>);
+        static_assert(!is_trivially_copy_constructible_v<A>);
         {
             dori::vector<A> v;
             v.reserve(10);
