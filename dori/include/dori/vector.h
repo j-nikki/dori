@@ -549,9 +549,11 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     Allocate(size_type n) noexcept(noexcept(Al_tr::allocate(al_, n)))
     {
         DORI_assert(n % Sz_all == 0);
-        auto p = Al_tr::allocate(al_, n);
-        DORI_assert(reinterpret_cast<uintptr_t>(p) % Align == 0);
-        return p;
+        // Use of lambda here avoids unreachable code warning
+        return [](auto p) {
+            DORI_assert(reinterpret_cast<uintptr_t>(p) % Align == 0);
+            return p;
+        }(Al_tr::allocate(al_, n));
     }
 
     constexpr DORI_inline void Maybe_delete() noexcept(
