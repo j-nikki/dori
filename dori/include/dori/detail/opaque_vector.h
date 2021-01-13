@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 namespace dori::detail
@@ -50,13 +51,21 @@ struct Destroy_tail_impl {
 };
 
 struct Destroy_tail {
+    template <class T>
+    static constexpr auto Get_type_key()
+    {
+        std::string_view sv = __FUNCSIG__;
+        auto f              = sv.find('<');
+        auto l              = sv.rfind('>');
+        return std::pair{sizeof(T), sv.substr(f, l - f)};
+    }
     template <class Al, std::size_t... Is, class... Ts>
     static constexpr DORI_inline void
     fn(vector_impl<Al, std::index_sequence<Is...>, Ts...> &v, void *p,
        std::size_t f_idx) noexcept
     {
         constexpr auto idx_sorted = [] {
-            std::array xs{std::pair{sizeof(Ts), Is}...};
+            std::array xs{std::pair{Get_type_key<Ts>(), Is}...};
             std::sort(xs.begin(), xs.end());
             return std::array{xs[Is].second...};
         }();
