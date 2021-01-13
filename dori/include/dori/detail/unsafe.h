@@ -13,7 +13,8 @@ constexpr DORI_inline void Call_maybe_unsafe(F &&f, Args &&...args) noexcept
     // a throw is impossible or unacceptable
     //
     // This function is used when a possibly not-noexcept invocable is called
-    // and the handling of any thrown exceptions is not supported.
+    // and the handling of any thrown exceptions is not supported (for example
+    // move assignment, move construction, destruction...).
     //
 #if DORI_DEBUG
     try {

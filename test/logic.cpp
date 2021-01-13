@@ -1,7 +1,6 @@
+#include <concepts>
 #include <dori/all.h>
-#include <functional>
 #include <numeric>
-#include <optional>
 #include <stdint.h>
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -37,7 +36,7 @@ static_assert(unsigned_integral<C::size_type>);
                                    ##__VA_ARGS__>)
 #define LOGIC_check_nonmemfn(r, f, ...)                                        \
     static_assert(is_invocable_r_v<r, decltype(DORI_f_ref(f)), ##__VA_ARGS__>)
-LOGIC_check_memfn(C::allocator_type, get_allocator, C &);
+LOGIC_check_memfn(C::allocator_type, get_allocator, const C &);
 LOGIC_check_memfn(C::iterator, begin, C &);
 LOGIC_check_memfn(C::iterator, end, C &);
 LOGIC_check_memfn(C::const_iterator, cbegin, C &);
@@ -46,21 +45,36 @@ LOGIC_check_memfn(C::const_iterator, begin, const C &);
 LOGIC_check_memfn(C::const_iterator, end, const C &);
 LOGIC_check_memfn(C::const_iterator, cbegin, const C &);
 LOGIC_check_memfn(C::const_iterator, cend, const C &);
-LOGIC_check_memfn(C::size_type, size, C &);
+LOGIC_check_memfn(C::size_type, size, const C &);
 // LOGIC_check_memfn(C::size_type, max_size, C &);
 LOGIC_check_memfn(bool, empty, C &);
+
+template <class T>
+struct Swappable {
+    static int swaps;
+};
+template <class T>
+int Swappable<T>::swaps = 0;
+
+template <class T>
+requires std::is_base_of_v<Swappable<T>, T> void swap(T &, T &)
+{
+    ++Swappable<T>::swaps;
+}
 
 TEST_SUITE("dori::vector")
 {
 #define DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(X)                           \
-    static int X##_def_ctors  = 0;                                             \
-    static int X##_move_ctors = 0;                                             \
-    static int X##_copy_ctors = 0;                                             \
-    static int X##_dtors      = 0;                                             \
+    static int X##_def_ctors   = 0;                                            \
+    static int X##_move_ctors  = 0;                                            \
+    static int X##_copy_ctors  = 0;                                            \
+    static int X##_dtors       = 0;                                            \
+    static int X##_copy_asgmts = 0;                                            \
+    static int X##_move_asgmts = 0;                                            \
     struct X {                                                                 \
         X() noexcept { ++X##_def_ctors; }                                      \
-        X &operator=(const X &rhs) = delete;                                   \
-        X &operator=(X &&rhs) = delete;                                        \
+        X &operator=(const X &) noexcept { return ++X##_copy_asgmts, *this; }  \
+        X &operator=(X &&) noexcept { return ++X##_move_asgmts, *this; }       \
         X(X &&) noexcept { ++X##_move_ctors; }                                 \
         X(const X &) noexcept { ++X##_copy_ctors; }                            \
         ~X() noexcept { ++X##_dtors; }                                         \
@@ -374,78 +388,125 @@ TEST_SUITE("dori::vector")
 
     TEST_CASE("dori::vector supports custom allocators")
     {
-        DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
-        static size_t allocations = 0;
-        struct Al : A {
-            using A::A;
-            using is_always_equal = true_type;
-            using value_type      = char;
-            bool operator==(const Al &) const { return true; }
-            bool operator!=(const Al &) const { return false; }
-            char *allocate(size_t n)
-            {
-                allocations += n;
-                DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
-                return new char[n];
-                DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
-            }
-            void deallocate(void *p, size_t n) noexcept
-            {
-                allocations -= n;
-                DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
-                delete[](char *) p;
-                DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
-            }
-        };
-
+        SUBCASE("dori::vector interfaces correctly with allocator")
         {
-            dori::vector_al<Al, int> v;
-            REQUIRE_EQ(A_def_ctors, 1);
-            REQUIRE_EQ(A_copy_ctors, 0);
-            REQUIRE_EQ(A_move_ctors, 0);
-            REQUIRE_EQ(A_dtors, 0);
+            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+            static size_t allocations = 0;
+            struct Al : A {
+                using A::A;
+                using is_always_equal = true_type;
+                using value_type      = char;
+                bool operator==(const Al &) const { return true; }
+                bool operator!=(const Al &) const { return false; }
+                char *allocate(size_t n)
+                {
+                    allocations += n;
+                    DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
+                    return new char[n];
+                    DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
+                }
+                void deallocate(void *p, size_t n) noexcept
+                {
+                    allocations -= n;
+                    DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
+                    delete[](char *) p;
+                    DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
+                }
+            };
 
-            v.reserve(2);
-            REQUIRE_EQ(allocations, sizeof(int) * 2);
-            REQUIRE_EQ(A_def_ctors, 1);
-            REQUIRE_EQ(A_copy_ctors, 0);
-            REQUIRE_EQ(A_move_ctors, 0);
-            REQUIRE_EQ(A_dtors, 0);
+            {
+                dori::vector_al<Al, int> v;
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 0);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_dtors, 0);
 
-            v.resize(2);
-            REQUIRE_EQ(allocations, sizeof(int) * 2);
-            REQUIRE_EQ(A_def_ctors, 1);
-            REQUIRE_EQ(A_copy_ctors, 0);
-            REQUIRE_EQ(A_move_ctors, 0);
-            REQUIRE_EQ(A_dtors, 0);
+                v.reserve(2);
+                REQUIRE_EQ(allocations, sizeof(int) * 2);
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 0);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_dtors, 0);
 
-            auto v2{v};
-            REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
-            REQUIRE_EQ(A_def_ctors, 1);
-            REQUIRE_EQ(A_copy_ctors, 1);
-            REQUIRE_EQ(A_move_ctors, 0);
-            REQUIRE_EQ(A_dtors, 0);
-            REQUIRE_EQ(v.size(), 2);
-            REQUIRE_EQ(v.capacity(), 2);
-            REQUIRE_EQ(v2.size(), 2);
-            REQUIRE_EQ(v2.capacity(), 2);
+                v.resize(2);
+                REQUIRE_EQ(allocations, sizeof(int) * 2);
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 0);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_dtors, 0);
 
-            auto v3{move(v)};
-            REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
+                auto v2{v};
+                REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 1);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_dtors, 0);
+                REQUIRE_EQ(v.size(), 2);
+                REQUIRE_EQ(v.capacity(), 2);
+                REQUIRE_EQ(v2.size(), 2);
+                REQUIRE_EQ(v2.capacity(), 2);
+
+                auto v3{move(v)};
+                REQUIRE_EQ(allocations, sizeof(int) * 2 * 2);
+                REQUIRE_EQ(A_def_ctors, 1);
+                REQUIRE_EQ(A_copy_ctors, 1);
+                REQUIRE_EQ(A_move_ctors, 1);
+                REQUIRE_EQ(A_dtors, 0);
+                REQUIRE_EQ(v.size(), 0);
+                REQUIRE_EQ(v.capacity(), 0);
+                REQUIRE_EQ(v3.size(), 2);
+                REQUIRE_EQ(v3.capacity(), 2);
+            }
+            REQUIRE_EQ(allocations, 0);
             REQUIRE_EQ(A_def_ctors, 1);
             REQUIRE_EQ(A_copy_ctors, 1);
             REQUIRE_EQ(A_move_ctors, 1);
-            REQUIRE_EQ(A_dtors, 0);
-            REQUIRE_EQ(v.size(), 0);
-            REQUIRE_EQ(v.capacity(), 0);
-            REQUIRE_EQ(v3.size(), 2);
-            REQUIRE_EQ(v3.capacity(), 2);
+            REQUIRE_EQ(A_dtors, 3);
         }
-        REQUIRE_EQ(allocations, 0);
-        REQUIRE_EQ(A_def_ctors, 1);
-        REQUIRE_EQ(A_copy_ctors, 1);
-        REQUIRE_EQ(A_move_ctors, 1);
-        REQUIRE_EQ(A_dtors, 3);
+        SUBCASE("dori::vector follows allocator replacement rules")
+        {
+            auto f = []<size_t I>() {
+                using Al_pocca = bool_constant<static_cast<bool>(I & 0b1)>;
+                using Al_pocma = bool_constant<static_cast<bool>(I & 0b10)>;
+                using Al_pocs  = bool_constant<static_cast<bool>(I & 0b100)>;
+                using Al_iae   = bool_constant<static_cast<bool>(I & 0b1000)>;
+                using Eq       = bool_constant<static_cast<bool>(I & 0b1'0000)>;
+                DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
+                struct Al : Swappable<Al>, A {
+                    using A::A;
+                    using propagate_on_container_copy_assignment = Al_pocca;
+                    using propagate_on_container_move_assignment = Al_pocma;
+                    using propagate_on_container_swap            = Al_pocs;
+                    using is_always_equal                        = Al_iae;
+                    using value_type                             = char;
+                    bool operator==(const Al &) const { return Eq::value; }
+                    bool operator!=(const Al &) const { return !Eq::value; }
+                    char *allocate(size_t) { throw std::bad_alloc{}; }
+                    void deallocate(void *, size_t) { throw std::bad_alloc{}; }
+                };
+                {
+                    dori::vector_al<Al, int> v1, v2;
+                    // Program shan't not swap unequal container allocators
+                    if constexpr (Eq::value || Al_iae::value || Al_pocs::value)
+                        swap(v1, v2);
+                    v1 = v2;
+                    v1 = move(v2);
+                }
+                REQUIRE_EQ(A_def_ctors, 2);
+                REQUIRE_EQ(A_copy_ctors, 0);
+                REQUIRE_EQ(A_move_ctors, 0);
+                REQUIRE_EQ(A_copy_asgmts,
+                           Al_pocca::value & !Al_iae::value & !Eq::value);
+                REQUIRE_EQ(A_move_asgmts, Al_pocma::value & !Al_iae::value);
+                REQUIRE_EQ(A_dtors, 2);
+                REQUIRE_EQ(Al::swaps, Al_pocs::value & !Al_iae::value);
+            };
+            [&]<size_t... Is>(index_sequence<Is...>)
+            {
+                (..., f.template operator()<Is>());
+            }
+            (make_index_sequence<0b1'1111 + 1>{});
+        }
     }
 
     TEST_CASE("dori::vector supports exceptions")
@@ -467,6 +528,7 @@ TEST_SUITE("dori::vector")
                 ~S() { ++dtors; }
             };
             dori::vector<S> v;
+            v.reserve(10);
             REQUIRE_THROWS_AS(v.resize(10), S::error);
             REQUIRE_EQ(ctors, 9);
             REQUIRE_EQ(dtors, 9);
@@ -559,6 +621,7 @@ TEST_SUITE("dori::vector")
                 ~S() { ++dtors; }
             };
             dori::vector<S> v;
+            v.reserve(10);
             v.resize(10);
             REQUIRE_EQ(def_ctors, 10);
             REQUIRE_EQ(copy_ctors, 0);
