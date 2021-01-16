@@ -10,13 +10,13 @@ struct vector_al;
 
 namespace detail
 {
-template <class, class, class...>
+template <class, class, class, auto, auto, std::size_t...>
 class vector_impl;
-
-template <class... Ts>
-using vector = vector_al<
-    boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
-    Ts...>;
 }
+// template <class... Ts>
+// using vector = vector_al<
+//    boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
+//    Ts...>;
+//}
 
 } // namespace dori

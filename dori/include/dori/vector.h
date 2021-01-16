@@ -6,7 +6,6 @@
 #include "detail/unsafe.h"
 #include "detail/vector_caster.h"
 #include "detail/vector_layout.h"
-#include "detail/vector_maker.h"
 
 #include <tuple>
 
@@ -16,8 +15,10 @@ namespace dori
 namespace detail
 {
 
-template <class Al, std::size_t... Is, class... Ts>
-class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
+template <class Al, class... Ts, class... TsSrt, auto Offsets, auto Redir,
+          std::size_t... Is>
+class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
+    : opaque_vector<Al>
 {
     using opaque_vector<Al>::al_;
     using opaque_vector<Al>::p_;
@@ -25,23 +26,17 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     using opaque_vector<Al>::cap_;
     using Al_tr = std::allocator_traits<Al>;
 
-    friend struct Destroy_tail;
-
-    template <std::size_t I>
-    using Elem = std::tuple_element_t<I, std::tuple<Ts...>>;
-
-    static constexpr inline auto Sz_all  = (sizeof(Ts) + ...);
-    static constexpr inline auto Align   = std::max({alignof(Ts)...});
-    static constexpr inline auto Offsets = detail::Offsets<Ts...>;
+    static constexpr inline auto Sz_all = (sizeof(Ts) + ...);
+    static constexpr inline auto Align  = std::max({alignof(Ts)...});
 
 #define DORI_vector_iterator_convop_refconv_and_ptrsty_const_iterator          \
-    std::tuple<const Ts *...>
+    std::tuple<const TsSrt *...>
 #define DORI_vector_iterator_convop_refconv_and_ptrsty_iterator                \
     constexpr DORI_inline operator const_iterator() const noexcept             \
     {                                                                          \
         return {ptrs, i};                                                      \
     }                                                                          \
-    std::tuple<Ts *...>
+    std::tuple<TsSrt *...>
 
 #define DORI_vector_iterator(It, Ref)                                          \
     struct It {                                                                \
@@ -56,8 +51,8 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }                                                                      \
         constexpr DORI_inline Ref operator*() noexcept                         \
         {                                                                      \
-            DORI_assert(i <= 0);                                               \
-            return {std::get<Is>(ptrs)[i]...};                                 \
+            DORI_assert(i < 0 && "out-of-bounds access");                      \
+            return {std::get<Redir[Is]>(ptrs)[i]...};                          \
         }                                                                      \
         constexpr DORI_inline bool operator==(const It &it) const noexcept     \
         {                                                                      \
@@ -83,10 +78,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     DORI_vector_iterator(iterator, reference);
 
   public:
-    //
-    // Member functions
-    //
-
     constexpr DORI_inline vector_impl() noexcept(noexcept(Al{}))
         : opaque_vector<Al>{}
     {
@@ -102,6 +93,20 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         other.sz_  = 0;
         other.cap_ = 0;
     }
+
+  private:
+    constexpr DORI_inline auto
+    Allocate(size_type n) noexcept(noexcept(Al_tr::allocate(al_, n)))
+    {
+        DORI_assert(n % Sz_all == 0);
+        // Use of lambda here avoids unreachable code warning
+        return [](auto p) {
+            DORI_assert(reinterpret_cast<uintptr_t>(p) % Align == 0);
+            return p;
+        }(Al_tr::allocate(al_, n));
+    }
+
+  public:
     constexpr DORI_inline vector_impl(vector_impl &&other, const Al &alloc)
         : opaque_vector<Al>{alloc, other.p_, other.sz_, other.cap_}
     {
@@ -113,6 +118,39 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         other.sz_  = 0;
         other.cap_ = 0;
     }
+
+  private:
+    constexpr DORI_inline void Destroy_to(void *p, size_type f = 0) noexcept
+    {
+        Destroy_to_impl<Offsets[Is]...>::template fn<Al, TsSrt...>(*this, p, f);
+    }
+
+    constexpr DORI_inline void Copy_from(const vector_impl &v)
+    {
+        DORI_assert(!cap_ && !sz_);
+        //
+        // If an exception is thrown, p_ points to garbage. Due to this, use
+        // !cap_ to check for no allocation.
+        //
+        sz_ = cap_ = v.sz_;
+        if (v.cap_) {
+            p_ = Allocate(cap_ * Sz_all);
+            (..., [&]<size_type I, class T>(const T *f, T *d_f) {
+                try {
+                    for (const auto l = f + v.sz_; f != l; ++f, ++d_f)
+                        Al_tr::construct(al_, d_f, *f);
+                } catch (...) {
+                    Destroy_to(d_f);
+                    sz_ = cap_ = 0;
+                    Al_tr::deallocate(al_, p_, v.cap_ * Sz_all);
+                    throw;
+                }
+            }.template operator()<Is>(v.data<Is>(), data<Is>()));
+        } else
+            p_ = nullptr;
+    }
+
+  public:
     constexpr DORI_inline vector_impl(const vector_impl &other)
         : opaque_vector<Al>{
               Al_tr::select_on_container_copy_construction(other.al_)}
@@ -147,9 +185,19 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                 Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
                                   static_cast<Fwd_t>(*f));
             // Destroy rhs.sz_..sz_
-            for (; d_f < c; ++f)
+            for (; std::less<>{}(d_f, c); ++f)
                 Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, d_f);
         }(v.Get_data<Is>(v.cap_), Get_data<Is>(cap_)));
+    }
+
+    constexpr DORI_inline void Maybe_delete() noexcept(
+        noexcept(clear(), Al_tr::deallocate(al_, p_, cap_ *Sz_all)))
+    {
+        if (cap_) {
+            clear();
+            Al_tr::deallocate(al_, p_, cap_ * Sz_all);
+            // Note no resetting vars
+        }
     }
 
   public:
@@ -213,20 +261,16 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
     constexpr DORI_inline Al get_allocator() const noexcept { return al_; }
 
-    //
-    // Element access
-    //
-
     constexpr DORI_inline reference operator[](size_type i) noexcept
     {
         DORI_assert(i < sz_);
-        return {reinterpret_cast<Ts *>(&p_[Offsets[Is] * cap_])[i]...};
+        return {data<Is>()[i]...};
     }
 
     constexpr DORI_inline const_reference operator[](size_type i) const noexcept
     {
         DORI_assert(i < sz_);
-        return {reinterpret_cast<const Ts *>(&p_[Offsets[Is] * cap_])[i]...};
+        return {data<Is>()[i]...};
     }
 
     constexpr DORI_inline reference at(size_type i)
@@ -266,18 +310,23 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     }
 
   private:
+    static constexpr auto npos = static_cast<size_type>(-1);
     template <std::size_t I>
     requires(I < sizeof...(Ts)) constexpr DORI_inline
-        auto Get_data(std::size_t cap) noexcept
+        auto Get_data(size_type cap = npos) noexcept
     {
-        return reinterpret_cast<Elem<I> *>(p_ + Offsets[I] * cap);
+        const auto n = (cap == npos) ? cap_ : cap;
+        using RTy    = typename Types<TsSrt...>::template Ith_t<I> *;
+        return reinterpret_cast<RTy>(p_ + Offsets[I] * n);
     }
 
     template <std::size_t I>
     requires(I < sizeof...(Ts)) constexpr DORI_inline
-        auto Get_data(std::size_t cap) const noexcept
+        auto Get_data(size_type cap = npos) const noexcept
     {
-        return reinterpret_cast<const Elem<I> *>(p_ + Offsets[I] * cap);
+        const auto n = (cap == npos) ? cap_ : cap;
+        using RTy    = const typename Types<TsSrt...>::template Ith_t<I> *;
+        return reinterpret_cast<RTy>(p_ + Offsets[I] * n);
     }
 
   public:
@@ -285,45 +334,55 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
     requires(I < sizeof...(Ts)) constexpr DORI_inline auto data() noexcept
     {
         DORI_assert(cap_);
-        return Get_data<I>(cap_);
+        return Get_data<Redir[I]>(cap_);
     }
 
     template <std::size_t I>
     requires(I < sizeof...(Ts)) constexpr DORI_inline auto data() const noexcept
     {
         DORI_assert(cap_);
-        return Get_data<I>(cap_);
+        return Get_data<Redir[I]>(cap_);
     }
 
-    //
-    // Iterators
-    //
+  private:
+    constexpr DORI_inline auto Iter_at(size_type idx) noexcept
+    {
+        return iterator{{(Get_data<Is>() + sz_)...},
+                        static_cast<std::ptrdiff_t>(idx - sz_)};
+    }
+    constexpr DORI_inline auto Iter_at(size_type idx) const noexcept
+    {
+        return const_iterator{{(Get_data<Is>() + sz_)...},
+                              static_cast<std::ptrdiff_t>(idx - sz_)};
+    }
 
-    constexpr DORI_inline iterator begin() noexcept
-    {
-        return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
-    }
-    constexpr DORI_inline const_iterator begin() const noexcept
-    {
-        return {{(data<Is>() + sz_)...}, -(intptr_t)sz_};
-    }
-    constexpr DORI_inline const_iterator cbegin() const noexcept
-    {
-        return begin();
-    }
+  public:
+    constexpr DORI_inline auto begin() noexcept { return Iter_at(0); }
+    constexpr DORI_inline auto begin() const noexcept { return Iter_at(0); }
+    constexpr DORI_inline auto cbegin() const noexcept { return Iter_at(0); }
 
     constexpr DORI_inline iterator end() noexcept { return {}; }
     constexpr DORI_inline const_iterator end() const noexcept { return {}; }
     constexpr DORI_inline const_iterator cend() const noexcept { return {}; }
 
-    //
-    // Capacity
-    //
-
     constexpr DORI_inline bool empty() const noexcept { return !sz_; }
     constexpr DORI_inline size_type size() const noexcept { return sz_; }
     constexpr DORI_inline size_type capacity() const noexcept { return cap_; }
 
+  private:
+    constexpr DORI_inline void Move_to_alloc(size_type cap, auto p) noexcept
+    {
+        DORI_assert(cap >= sz_);
+        (..., [&]<class T>(T *f, T *d_f) {
+            for (const auto l = f + sz_; f != l; ++f, ++d_f) {
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
+                                  static_cast<Move_t<T>>(*f));
+                Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f);
+            }
+        }(data<Is>(), reinterpret_cast<Ts *>(p + Offsets[Is] * cap)));
+    }
+
+  public:
     constexpr DORI_inline void
     reserve(size_type cap) noexcept(noexcept(Move_to_alloc(cap, Allocate({}))))
     {
@@ -348,16 +407,12 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         cap_ = sz_;
     }
 
-    //
-    // Modifiers
-    //
-
     constexpr DORI_inline void clear() noexcept
     {
         (..., [&]<class T>(T *f, T *l) {
             while (f != l)
                 Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f++);
-        }(data<Is>(), data<Is>() + sz_));
+        }(Get_data<Is>(), Get_data<Is>() + sz_));
         sz_ = 0;
     }
 
@@ -384,6 +439,56 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         return erase(pos, std::next(pos));
     }
 
+    template <Tuple... Us>
+    requires(sizeof...(Ts) == sizeof...(Us)) //
+        constexpr DORI_inline iterator
+        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
+            (... && std::is_same_v<Us, std::tuple<Ts &&>>))
+    {
+        DORI_assert(sz_ < cap_);
+        std::tuple<Us &&...> fwd{static_cast<Us &&>(xs)...};
+        const auto off = sz_++;
+        (..., ([&]<class T, class U, std::size_t... Js>(
+                  T * p, U && t, std::index_sequence<Js...>) {
+             using D = std::decay_t<U>;
+             static_assert(
+                 std::is_constructible_v<T, std::tuple_element_t<Js, D> &&...>,
+                 "elements not constructible with parameters to emplace()");
+             try {
+                 Call_maybe_unsafe(std::is_same<std::tuple<T &&>, D>{},
+                                   DORI_f_ref(Al_tr::construct), al_, p,
+                                   std::get<Js>(static_cast<U &&>(t))...);
+             } catch (...) {
+                 Destroy_to(p, off);
+                 --sz_;
+                 throw;
+             }
+         }(Get_data<Is>() + off,
+              std::get<Redir[Is]>(static_cast<std::tuple<Us &&...> &&>(fwd)),
+              std::make_index_sequence<
+                  std::tuple_size_v<Ith_t<Redir[Is], Us...>>>{})));
+        return Iter_at(off);
+    }
+
+    constexpr DORI_inline auto emplace_back() noexcept(noexcept(
+        emplace_back(std::piecewise_construct, (Is, std::tuple<>{})...))) //
+        requires(... &&std::is_default_constructible_v<Ts>)
+    {
+        return emplace_back(std::piecewise_construct, (Is, std::tuple<>{})...);
+    }
+
+    template <class... Us>
+    requires((std::is_constructible_v<Ts, Us &&> && ...) &&
+             sizeof...(Us) == sizeof...(Ts)) //
+        constexpr DORI_inline iterator
+        emplace_back(Us &&...xs) noexcept(noexcept(
+            emplace_back(std::piecewise_construct,
+                         std::tuple<Us &&>{static_cast<Us &&>(xs)}...)))
+    {
+        return emplace_back(std::piecewise_construct,
+                            std::tuple<Us &&>{static_cast<Us &&>(xs)}...);
+    }
+
     template <class... Us>
     requires((std::is_constructible_v<Ts, Us &&> && ...) &&
              sizeof...(Us) == sizeof...(Ts)) //
@@ -407,42 +512,6 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         push_back(std::get<Is>(static_cast<value_type &&>(value))...);
     }
 
-    constexpr DORI_inline auto emplace_back() noexcept(noexcept(emplace_back(
-        std::piecewise_construct,
-        (Is,
-         std::tuple<>{})...))) requires(... &&
-                                            std::is_default_constructible_v<Ts>)
-    {
-        return emplace_back(std::piecewise_construct, (Is, std::tuple<>{})...);
-    }
-
-    template <class... Us>
-    requires((std::is_constructible_v<Ts, Us &&> && ...) &&
-             sizeof...(Us) == sizeof...(Ts)) //
-        constexpr DORI_inline iterator
-        emplace_back(Us &&...xs) noexcept(noexcept(
-            emplace_back(std::piecewise_construct,
-                         std::tuple<Us &&>{static_cast<Us &&>(xs)}...)))
-    {
-        return emplace_back(std::piecewise_construct,
-                            std::tuple<Us &&>{static_cast<Us &&>(xs)}...);
-    }
-
-    template <Tuple... Us>
-    requires(sizeof...(Ts) == sizeof...(Us)) //
-        constexpr DORI_inline iterator
-        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
-            (... && (noexcept(Emplace(this, std::declval<Ts *>(),
-                                      std::declval<Us &&>())))))
-    {
-        DORI_assert(sz_ < cap_);
-        const std::array datas{(p_ + Offsets[Is] * cap_)...};
-        const auto off = sz_++;
-        const std::tuple ptrs{&reinterpret_cast<Ts *>(datas[Is])[off]...};
-        (Emplace(this, std::get<Is>(ptrs), static_cast<Us &&>(xs)), ...);
-        return {{std::get<Is>(ptrs)...}, -static_cast<intptr_t>(off)};
-    }
-
     constexpr DORI_inline void resize(size_type sz)
     {
         DORI_assert(cap_);
@@ -454,7 +523,7 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
                     for (; f != l; ++f)
                         Al_tr::construct(al_, f);
                 } catch (...) {
-                    Destroy_tail(f, off);
+                    Destroy_to(f, off);
                     sz_ = off;
                     throw;
                 }
@@ -468,107 +537,35 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
         }
     }
 
-  private:
-    //
-    //
-    // Modification
-    //
-
-    static constexpr auto Emplace = []<class T, class X>(auto v, X *p, T &&t) {
-#ifndef __INTELLISENSE__ /* 20210110: IntelliSense ICE'd on these (?) */
-        DORI_assert(reinterpret_cast<uintptr_t>(p) % alignof(X) == 0);
-        DORI_assert(reinterpret_cast<char *>(p) >= v->p_);
-        DORI_assert(reinterpret_cast<char *>(p) < v->p_ + Sz_all * v->cap_);
-#endif
-        [&]<size_type... Js>(T && t, std::index_sequence<Js...>)
-        {
-            static_assert(
-                DORI_f_ok(Al_tr::construct, v->al_, p,
-                          std::get<Js>(static_cast<T &&>(t))...),
-                "elements not constructible with parameters to emplace()");
-            if constexpr (std::is_same_v<std::tuple<X &&>, T>) {
-                Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), v->al_, p,
-                                  std::get<Js>(static_cast<T &&>(t))...);
-            } else {
-                try {
-                    Al_tr::construct(v->al_, p,
-                                     std::get<Js>(static_cast<T &&>(t))...);
-                } catch (...) {
-                    v->Destroy_tail(p, v->sz_ - 1);
-                    --v->sz_;
-                    throw;
-                }
-            }
-        }
-        (static_cast<T &&>(t),
-         std::make_index_sequence<std::tuple_size_v<T>>{});
-    };
-
-    //
-    // Allocation
-    //
-
-    constexpr DORI_inline void Copy_from(const vector_impl &v)
+    template <class F>
+    requires((std::is_invocable_v<F &&, Ts *, Ts *> && ...)) //
+        constexpr DORI_inline void for_each(F &&f) noexcept(
+            noexcept((..., static_cast<F &&>(f)(data<Is>(), data<Is>()))))
     {
-        DORI_assert(!cap_ && !sz_);
-        //
-        // If an exception is thrown, p_ points to garbage. Due to this, use
-        // !cap_ to check for no allocation.
-        //
-        sz_ = cap_ = v.sz_;
-        if (v.cap_) {
-            p_ = Allocate(cap_ * Sz_all);
-            (..., [&]<size_type I, class T>(const T *f, T *d_f) {
-                try {
-                    for (const auto l = f + v.sz_; f != l; ++f, ++d_f)
-                        Al_tr::construct(al_, d_f, *f);
-                } catch (...) {
-                    Destroy_tail(d_f);
-                    sz_ = cap_ = 0;
-                    Al_tr::deallocate(al_, p_, v.cap_ * Sz_all);
-                    throw;
-                }
-            }.template operator()<Is>(v.data<Is>(), data<Is>()));
-        } else
-            p_ = nullptr;
+        (...,
+         static_cast<F &&>(f)(data<Redir[Is]>() + data<Redir[Is]>() + sz_));
     }
-
-    constexpr DORI_inline void Move_to_alloc(size_type cap, auto p) noexcept
+    template <class F>
+    requires((std::is_invocable_v<F &&, Ts *, Ts *> && ...)) //
+        constexpr DORI_inline void for_each(F &&f) const
+        noexcept(noexcept((..., static_cast<F &&>(f)(data<Is>(), data<Is>()))))
     {
-        DORI_assert(cap >= sz_);
-        (..., [&]<class T>(T *f, T *d_f) {
-            for (const auto l = f + sz_; f != l; ++f, ++d_f) {
-                Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, d_f,
-                                  static_cast<Move_t<T>>(*f));
-                Call_maybe_unsafe(DORI_f_ref(Al_tr::destroy), al_, f);
-            }
-        }(data<Is>(), reinterpret_cast<Ts *>(p + Offsets[Is] * cap)));
+        (...,
+         static_cast<F &&>(f)(data<Redir[Is]>() + data<Redir[Is]>() + sz_));
     }
-
-    constexpr DORI_inline auto
-    Allocate(size_type n) noexcept(noexcept(Al_tr::allocate(al_, n)))
+    template <class F>
+    requires((std::is_invocable_v<F &&, Ts *, Ts *> && ...)) //
+        constexpr DORI_inline void for_each_stable(F &&f) noexcept(
+            noexcept((..., static_cast<F &&>(f)(data<Is>(), data<Is>()))))
     {
-        DORI_assert(n % Sz_all == 0);
-        // Use of lambda here avoids unreachable code warning
-        return [](auto p) {
-            DORI_assert(reinterpret_cast<uintptr_t>(p) % Align == 0);
-            return p;
-        }(Al_tr::allocate(al_, n));
+        (..., static_cast<F &&>(f)(data<Is>() + data<Is>() + sz_));
     }
-
-    constexpr DORI_inline void Maybe_delete() noexcept(
-        noexcept(clear(), Al_tr::deallocate(al_, p_, cap_ *Sz_all)))
+    template <class F>
+    requires((std::is_invocable_v<F &&, Ts *, Ts *> && ...)) //
+        constexpr DORI_inline void for_each_stable(F &&f) const
+        noexcept(noexcept((..., static_cast<F &&>(f)(data<Is>(), data<Is>()))))
     {
-        if (cap_) {
-            clear();
-            Al_tr::deallocate(al_, p_, cap_ * Sz_all);
-            // Note no resetting vars
-        }
-    }
-
-    constexpr DORI_inline void Destroy_tail(void *p, size_type f = 0) noexcept
-    {
-        Destroy_tail::fn(*this, p, f);
+        (..., static_cast<F &&>(f)(data<Is>() + data<Is>() + sz_));
     }
 };
 
@@ -576,24 +573,22 @@ class vector_impl<Al, std::index_sequence<Is...>, Ts...> : opaque_vector<Al>
 
 template <class... Ts>
 constexpr inline detail::vector_caster<Ts...> vector_cast{};
-template <class... Ts>
-constexpr detail::vector_maker<Ts...> make_vector{};
 
 template <class Allocator, class... Ts>
-struct vector_al
-    : detail::vector_impl<Allocator, std::index_sequence_for<Ts...>, Ts...> {
-    using detail::vector_impl<Allocator, std::index_sequence_for<Ts...>,
-                              Ts...>::vector_impl;
+struct vector_al : detail::Get_vector_t<Allocator, Ts...> {
+    using detail::Get_vector_t<Allocator, Ts...>::vector_impl;
 };
 
-template <class Al, std::size_t... Is, class... Ts>
-constexpr DORI_inline bool operator==(
-    const detail::vector_impl<Al, std::index_sequence<Is...>, Ts...> &lhs,
-    const detail::vector_impl<Al, std::index_sequence<Is...>, Ts...>
-        &rhs) noexcept
+template <class Al, class... Ts>
+constexpr DORI_inline bool operator==(const vector_al<Al, Ts...> &lhs,
+                                      const vector_al<Al, Ts...> &rhs) noexcept
 {
-    return (... && std::equal(lhs.data<Is>(), lhs.data<Is>() + lhs.size(),
-                              rhs.data<Is>(), rhs.data<Is>() + rhs.size()));
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>)
+    {
+        return (... && std::equal(lhs.data<Is>(), lhs.data<Is>() + lhs.size(),
+                                  rhs.data<Is>(), rhs.data<Is>() + rhs.size()));
+    }
+    (std::index_sequence_for<Ts...>{});
 }
 
 template <class Al, class... Ts>
@@ -611,6 +606,8 @@ constexpr DORI_inline void swap(vector_al<Al, Ts...> &lhs,
 }
 
 template <class... Ts>
-using vector = detail::vector<Ts...>;
+using vector = vector_al<
+    boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
+    Ts...>;
 
 } // namespace dori

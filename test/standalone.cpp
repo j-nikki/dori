@@ -7,5 +7,5 @@
 int main()
 {
     dori::vector<int, double> v;
-    dori::vector_cast<float, int64_t>(v);
+    //dori::vector_cast<float, int64_t>(v);
 }

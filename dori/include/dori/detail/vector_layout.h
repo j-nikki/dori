@@ -1,22 +1,41 @@
 #pragma once
 
+#include "traits.h"
+#include "vector_fwd.h"
+
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <numeric>
 #include <utility>
 
 namespace dori::detail
 {
-template <std::size_t... Is, std::size_t... Szs>
-static constexpr auto Get_offsets(std::index_sequence<Is...>,
-                                  std::index_sequence<Szs...>) noexcept
+
+template <class Al, class... Ts, std::size_t... Is>
+constexpr auto Get_vector(std::index_sequence<Is...>)
 {
-    return std::array{[](std::size_t I, std::size_t Sz) {
-        return static_cast<std::ptrdiff_t>(
-            (... + (Sz > Szs || Sz == Szs && I <= Is ? 0 : Szs)));
-    }(Is, Szs)...};
+    constexpr auto res = [] {
+        std::array xs{std::tuple{static_cast<std::ptrdiff_t>(sizeof(Ts)),
+                                 Get_type_name<Ts>(), Is}...};
+        std::sort(xs.begin(), xs.end(), std::greater<>{});
+
+        std::array idx{std::get<2>(xs[Is])...};
+        std::array<std::size_t, xs.size()> offs{}, redir{};
+        (..., (redir[idx[Is]] = Is));
+        std::ptrdiff_t off = 0;
+        (..., (offs[Is] = off, off += std::get<0>(xs[Is])));
+
+        return std::array{idx, offs, redir};
+    }();
+    using Ts_   = Types<Ts...>;
+    using TsSrt = Types<Ts_::template Ith_t<res[0][Is]>...>;
+    return vector_impl<Al, Ts_, TsSrt, res[1], res[2], Is...>{};
 }
-template <class... Ts>
-constexpr inline auto
-    Offsets = Get_offsets(std::index_sequence_for<Ts...>{},
-                          std::index_sequence<sizeof(Ts)...>{});
+
+template <class Al, class... Ts>
+using Get_vector_t =
+    decltype(Get_vector<Al, Ts...>(std::index_sequence_for<Ts...>{}));
+
 } // namespace dori::detail

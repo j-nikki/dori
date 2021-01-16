@@ -30,7 +30,7 @@ static_assert(unsigned_integral<C::size_type>);
 //
 // Check member functions
 //
-
+// __VA_OPT__
 #define LOGIC_check_memfn(r, f, v, ...)                                        \
     static_assert(is_invocable_r_v<r, decltype(DORI_f_ref(declval<v>().f)),    \
                                    ##__VA_ARGS__>)
@@ -145,8 +145,10 @@ TEST_SUITE("dori::vector")
         v.reserve(1);
         v.resize(1);
         auto [i8, i64, i16, i32] = v[0];
-        SUBCASE("contained elements are tightly packed")
+        SUBCASE("order of element sequences respects elements' alignment")
         {
+            /*auto lo = dori::detail::Offsets<int8_t, int64_t, int16_t,
+            int32_t>; (void)lo;*/
             REQUIRE_LT((uintptr_t)&i64, (uintptr_t)&i32);
             REQUIRE_LT((uintptr_t)&i32, (uintptr_t)&i16);
             REQUIRE_LT((uintptr_t)&i16, (uintptr_t)&i8);
@@ -348,38 +350,17 @@ TEST_SUITE("dori::vector")
         {
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(A)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
-            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(C)
-            DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(D)
             {
-                dori::vector<A, B> v;
+                dori::vector<A> v;
                 v.reserve(8);
                 v.resize(8);
-                auto v2 = dori::vector_cast<C, D>(v);
+                auto v2 = dori::vector_cast<B>(v);
             }
             REQUIRE_EQ(A_def_ctors, 8);
-            REQUIRE_EQ(B_def_ctors, 8);
-            REQUIRE_EQ(C_copy_ctors, 8);
-            REQUIRE_EQ(D_copy_ctors, 8);
+            REQUIRE_EQ(B_copy_ctors, 8);
             REQUIRE_EQ(A_dtors, 8);
             REQUIRE_EQ(B_dtors, 8);
-            REQUIRE_EQ(C_dtors, 8);
-            REQUIRE_EQ(D_dtors, 8);
         }
-    }
-
-    TEST_CASE("dori::vector orders element sequences stably")
-    {
-        dori::vector<int, float, int64_t, double> v;
-        auto &cast =
-            dori::vector_cast<float, array<char, 4>, double, array<char, 8>>(v);
-        v.reserve(1);
-        v.push_back({10, 20.f, 30i64, 40.});
-        auto [v0, v1, v2, v3] = v[0];
-        auto [c0, c1, c2, c3] = cast[0];
-        REQUIRE_EQ(v0, bit_cast<int>(c0));
-        REQUIRE_EQ(v1, bit_cast<float>(c1));
-        REQUIRE_EQ(v2, bit_cast<int64_t>(c2));
-        REQUIRE_EQ(v3, bit_cast<double>(c3));
     }
 
 #define DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN                         \
@@ -533,7 +514,7 @@ TEST_SUITE("dori::vector")
             REQUIRE_EQ(ctors, 9);
             REQUIRE_EQ(dtors, 9);
         }
-        SUBCASE("throwing in emplace() of unary tuple does nothing")
+        SUBCASE("throwing in emplace() of unary tuple does not unwind")
         {
             static int until_throw = 9;
             static int dtors       = 0;
@@ -564,43 +545,33 @@ TEST_SUITE("dori::vector")
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(B)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(C)
             DORI_VECTOR_TEST_DEFINE_CTOR_DTOR_COUNTER(D)
-            static bool do_throw = true;
-            struct S {
-                struct error {
-                };
-                S()
-                {
-                    if (do_throw)
-                        throw error{};
-                }
+            static int until_throw = 2;
+            struct error {
             };
-            dori::vector<A, B, S, C, D> v;
+            auto get_s = [&]<class Error, class T>() {
+                static auto &until_throw_ = until_throw;
+                struct S : T {
+                    S()
+                    {
+                        if (!until_throw_--)
+                            throw Error{};
+                    }
+                };
+                return S{};
+            };
+            using SA = decltype(get_s.template operator()<error, A>());
+            using SB = decltype(get_s.template operator()<error, B>());
+            using SC = decltype(get_s.template operator()<error, C>());
+            using SD = decltype(get_s.template operator()<error, D>());
+            dori::vector<SA, SB, SC, SD> v;
             v.reserve(1);
-            REQUIRE_THROWS_AS(v.emplace_back(), S::error);
-            REQUIRE_EQ(A_def_ctors, 1);
-            REQUIRE_EQ(B_def_ctors, 1);
-            REQUIRE_EQ(C_def_ctors, 0);
-            REQUIRE_EQ(D_def_ctors, 0);
-            REQUIRE_EQ(A_dtors, 1);
-            REQUIRE_EQ(B_dtors, 1);
-            REQUIRE_EQ(C_dtors, 0);
-            REQUIRE_EQ(D_dtors, 0);
-            SUBCASE("... emplacees only")
-            {
-                do_throw = false;
-                v.reserve(2);
-                v.resize(1);
-                do_throw = true;
-                REQUIRE_THROWS_AS(v.emplace_back(), S::error);
-                REQUIRE_EQ(A_def_ctors, 1 + 2);
-                REQUIRE_EQ(B_def_ctors, 1 + 2);
-                REQUIRE_EQ(C_def_ctors, 0 + 1);
-                REQUIRE_EQ(D_def_ctors, 0 + 1);
-                REQUIRE_EQ(A_dtors, 1 + 1);
-                REQUIRE_EQ(B_dtors, 1 + 1);
-                REQUIRE_EQ(C_dtors, 0 + 0);
-                REQUIRE_EQ(D_dtors, 0 + 0);
-            }
+            REQUIRE_THROWS_AS(v.emplace_back(), error);
+            REQUIRE_EQ(A_def_ctors + B_def_ctors + C_def_ctors + D_def_ctors,
+                       3);
+            REQUIRE_EQ(A_dtors, A_def_ctors);
+            REQUIRE_EQ(B_dtors, B_def_ctors);
+            REQUIRE_EQ(C_dtors, C_def_ctors);
+            REQUIRE_EQ(D_dtors, D_def_ctors);
         }
         SUBCASE("throwing from copy ctor unwinds")
         {

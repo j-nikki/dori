@@ -2,6 +2,7 @@
 
 #include "inline.h"
 #include "vector_fwd.h"
+#include "vector_layout.h"
 
 #include <algorithm>
 #include <array>
@@ -35,43 +36,18 @@ struct opaque_vector {
 // their underlying layouts match).
 //
 
-template <std::ptrdiff_t... Ns>
-struct Destroy_tail_impl {
+template <std::size_t... Ns>
+struct Destroy_to_impl {
     template <class Al, class... Ts>
     static void fn(opaque_vector<Al> &v, void *p, std::size_t f_idx) noexcept
     {
-        (..., [&]<std::ptrdiff_t N, class T>() {
+        (..., [&]<class T>(auto N) {
             const auto data = reinterpret_cast<T *>(v.p_ + N * v.cap_);
             const auto l = std::min(reinterpret_cast<uintptr_t>(data + v.sz_),
                                     reinterpret_cast<uintptr_t>(p));
             for (auto it = data + f_idx; reinterpret_cast<uintptr_t>(it) < l;)
                 std::allocator_traits<Al>::destroy(v.al_, it++);
-        }.template operator()<Ns, Ts>());
-    }
-};
-
-struct Destroy_tail {
-    template <class T>
-    static constexpr auto Get_type_key()
-    {
-        std::string_view sv = __FUNCSIG__;
-        auto f              = sv.find('<');
-        auto l              = sv.rfind('>');
-        return std::pair{sizeof(T), sv.substr(f, l - f)};
-    }
-    template <class Al, std::size_t... Is, class... Ts>
-    static constexpr DORI_inline void
-    fn(vector_impl<Al, std::index_sequence<Is...>, Ts...> &v, void *p,
-       std::size_t f_idx) noexcept
-    {
-        constexpr auto idx_sorted = [] {
-            std::array xs{std::pair{Get_type_key<Ts>(), Is}...};
-            std::sort(xs.begin(), xs.end());
-            return std::array{xs[Is].second...};
-        }();
-        using V = vector_impl<Al, std::index_sequence<Is...>, Ts...>;
-        Destroy_tail_impl<V::Offsets[idx_sorted[Is]]...>::template fn<
-            Al, typename V::template Elem<idx_sorted[Is]>...>(v, p, f_idx);
+        }.template operator()<Ts>(Ns));
     }
 };
 
