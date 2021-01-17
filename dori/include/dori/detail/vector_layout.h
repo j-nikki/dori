@@ -29,8 +29,8 @@ constexpr auto Get_vector(std::index_sequence<Is...>)
 
         return std::array{idx, offs, redir};
     }();
-    using Ts_   = Types<Ts...>;
-    using TsSrt = Types<Ts_::template Ith_t<res[0][Is]>...>;
+    using Ts_   = mp_list<Ts...>;
+    using TsSrt = mp_list<mp_at_c<Ts_, res[0][Is]>...>;
     return vector_impl<Al, Ts_, TsSrt, res[1], res[2], Is...>{};
 }
 

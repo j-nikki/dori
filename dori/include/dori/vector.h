@@ -7,6 +7,8 @@
 #include "detail/vector_caster.h"
 #include "detail/vector_layout.h"
 
+#include <boost/mp11/algorithm.hpp>
+#include <boost/mp11/list.hpp>
 #include <tuple>
 
 namespace dori
@@ -17,7 +19,7 @@ namespace detail
 
 template <class Al, class... Ts, class... TsSrt, auto Offsets, auto Redir,
           std::size_t... Is>
-class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
+class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
     : opaque_vector<Al>
 {
     using opaque_vector<Al>::al_;
@@ -81,6 +83,31 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
     constexpr DORI_inline vector_impl() noexcept(noexcept(Al{}))
         : opaque_vector<Al>{}
     {
+    }
+    template <class... Args>
+    requires(sizeof...(Args) - 1 == sizeof...(Ts) * 2 &&
+             mp_all_of<mp_pop_back<mp_list<Args...>>, std::input_iterator> &&
+             std::is_convertible_v<mp_back<mp_list<Args...>>, const Al &>) //
+        constexpr DORI_inline vector_impl(Args &&...args)
+        : vector_impl((static_cast<Args &&>(args), ...))
+    {
+        using Fwd = std::tuple<Args &&...>;
+        Fwd fwd{static_cast<Args &&>(args)...};
+        cap_ = sz_ = static_cast<size_type>(
+            std::distance(std::get<0>(static_cast<Fwd &&>(fwd)),
+                          std::get<1>(static_cast<Fwd &&>(fwd))));
+        p_ = Allocate(sz_);
+        (...,
+         []<class T>(T *d_f, auto f, const auto l) {
+             try {
+                 for (; f != l; ++f, ++d_f)
+                     Al_tr::construct(al_, d_f, *f);
+             } catch (...) {
+                 Destroy_to(d_f);
+                 throw;
+             }
+         }(Get_data<Is>(), std::get<Redir[Is * 2]>(static_cast<Fwd &&>(fwd)),
+           std::get<Redir[Is * 2 + 1]>(static_cast<Fwd &&>(fwd))));
     }
     constexpr DORI_inline vector_impl(const Al &alloc) noexcept
         : opaque_vector<Al>{alloc}
@@ -316,7 +343,7 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
         auto Get_data(size_type cap = npos) noexcept
     {
         const auto n = (cap == npos) ? cap_ : cap;
-        using RTy    = typename Types<TsSrt...>::template Ith_t<I> *;
+        using RTy    = mp_at_c<mp_list<TsSrt...>, I> *;
         return reinterpret_cast<RTy>(p_ + Offsets[I] * n);
     }
 
@@ -325,7 +352,7 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
         auto Get_data(size_type cap = npos) const noexcept
     {
         const auto n = (cap == npos) ? cap_ : cap;
-        using RTy    = const typename Types<TsSrt...>::template Ith_t<I> *;
+        using RTy    = const mp_at_c<mp_list<TsSrt...>, I> *;
         return reinterpret_cast<RTy>(p_ + Offsets[I] * n);
     }
 
@@ -452,7 +479,7 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
                   T * p, U && t, std::index_sequence<Js...>) {
              using D = std::decay_t<U>;
              static_assert(
-                 std::is_constructible_v<T, std::tuple_element_t<Js, D> &&...>,
+                 std::is_constructible_v<T, mp_at_c<D, Js> &&...>,
                  "elements not constructible with parameters to emplace()");
              try {
                  Call_maybe_unsafe(std::is_same<std::tuple<T &&>, D>{},
@@ -466,7 +493,7 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
          }(Get_data<Is>() + off,
               std::get<Redir[Is]>(static_cast<std::tuple<Us &&...> &&>(fwd)),
               std::make_index_sequence<
-                  std::tuple_size_v<Ith_t<Redir[Is], Us...>>>{})));
+                  std::tuple_size_v<mp_at_c<mp_list<Us...>, Redir[Is]>>>{})));
         return Iter_at(off);
     }
 
@@ -569,6 +596,16 @@ class vector_impl<Al, Types<Ts...>, Types<TsSrt...>, Offsets, Redir, Is...>
     }
 };
 
+template <class L>
+using Default_allocator = boost::alignment::aligned_allocator<
+    char, mp_max_element<mp_transform<std::alignment_of, L>, mp_less>::value>;
+
+template <class L>
+using Deduce_vec = mp_rename<
+    std::conditional_t<Allocator<char, mp_back<L>>, mp_rotate_right_c<L, 1>,
+                       mp_push_front<L, Default_allocator<L>>>,
+    vector_al>;
+
 } // namespace detail
 
 template <class... Ts>
@@ -606,8 +643,6 @@ constexpr DORI_inline void swap(vector_al<Al, Ts...> &lhs,
 }
 
 template <class... Ts>
-using vector = vector_al<
-    boost::alignment::aligned_allocator<char, std::max({alignof(Ts)...})>,
-    Ts...>;
+using vector = detail::Deduce_vec<boost::mp11::mp_list<Ts...>>;
 
 } // namespace dori

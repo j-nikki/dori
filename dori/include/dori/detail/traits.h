@@ -1,9 +1,34 @@
 #pragma once
 
+#include <boost/mp11/algorithm.hpp>
+#include <iterator>
 #include <type_traits>
 
 namespace dori::detail
 {
+
+using namespace boost::mp11;
+
+template <class For, class T>
+concept Init_iter =
+    std::is_constructible_v<For, typename std::iterator_traits<T>::value_type>;
+
+template <class For, class T>
+concept Allocator = requires(T &al)
+{
+    typename T::pointer;
+    {
+        al.allocate(0)
+    }
+    ->std::same_as<typename T::pointer>;
+}
+|| requires(T &al)
+{
+    {
+        al.allocate(0)
+    }
+    ->std::same_as<typename T::value_type *>;
+};
 
 #define DORI_cat(a, b) DORI_cat_exp(a, b)
 #define DORI_cat_exp(a, b) a##b
@@ -29,19 +54,6 @@ template <class T>
 concept Tuple = requires
 {
     typename std::tuple_size<T>;
-};
-
-template <class... Ts>
-struct Types {
-    template <std::size_t I>
-    using Ith_t = std::tuple_element_t<I, std::tuple<Ts...>>;
-};
-
-template <std::size_t I, class... Ts>
-using Ith_t = typename Types<Ts...>::template Ith_t<I>;
-
-template <std::size_t... Is>
-struct Idx {
 };
 
 template <class T>

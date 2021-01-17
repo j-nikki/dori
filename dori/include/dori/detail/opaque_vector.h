@@ -1,6 +1,7 @@
 #pragma once
 
 #include "inline.h"
+#include "traits.h"
 #include "vector_fwd.h"
 #include "vector_layout.h"
 
@@ -41,12 +42,16 @@ struct Destroy_to_impl {
     template <class Al, class... Ts>
     static void fn(opaque_vector<Al> &v, void *p, std::size_t f_idx) noexcept
     {
-        (..., [&]<class T>(auto N) {
+        (... && [&]<class T>(auto N) {
             const auto data = reinterpret_cast<T *>(v.p_ + N * v.cap_);
-            const auto l = std::min(reinterpret_cast<uintptr_t>(data + v.sz_),
-                                    reinterpret_cast<uintptr_t>(p));
-            for (auto it = data + f_idx; reinterpret_cast<uintptr_t>(it) < l;)
-                std::allocator_traits<Al>::destroy(v.al_, it++);
+            const auto p_   = reinterpret_cast<T *>(p);
+            const auto last = data + v.sz_;
+            const auto lt   = std::less<>{}(p_, last);
+            const auto l    = lt ? p_ : last;
+            for (auto it = data + f_idx; it != l; ++it)
+                Call_maybe_unsafe(
+                    DORI_f_ref(std::allocator_traits<Al>::destroy), v.al_, it);
+            return lt;
         }.template operator()<Ts>(Ns));
     }
 };

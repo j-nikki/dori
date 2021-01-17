@@ -396,7 +396,7 @@ TEST_SUITE("dori::vector")
             };
 
             {
-                dori::vector_al<Al, int> v;
+                dori::vector<int, Al> v;
                 REQUIRE_EQ(A_def_ctors, 1);
                 REQUIRE_EQ(A_copy_ctors, 0);
                 REQUIRE_EQ(A_move_ctors, 0);
@@ -466,7 +466,7 @@ TEST_SUITE("dori::vector")
                     void deallocate(void *, size_t) { throw std::bad_alloc{}; }
                 };
                 {
-                    dori::vector_al<Al, int> v1, v2;
+                    dori::vector<int, Al> v1, v2;
                     // Program shan't not swap unequal container allocators
                     if constexpr (Eq::value || Al_iae::value || Al_pocs::value)
                         swap(v1, v2);
@@ -568,10 +568,7 @@ TEST_SUITE("dori::vector")
             REQUIRE_THROWS_AS(v.emplace_back(), error);
             REQUIRE_EQ(A_def_ctors + B_def_ctors + C_def_ctors + D_def_ctors,
                        3);
-            REQUIRE_EQ(A_dtors, A_def_ctors);
-            REQUIRE_EQ(B_dtors, B_def_ctors);
-            REQUIRE_EQ(C_dtors, C_def_ctors);
-            REQUIRE_EQ(D_dtors, D_def_ctors);
+            REQUIRE_EQ(A_dtors + B_dtors + C_dtors + D_dtors, 2);
         }
         SUBCASE("throwing from copy ctor unwinds")
         {

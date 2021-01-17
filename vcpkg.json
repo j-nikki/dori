@@ -2,6 +2,7 @@
   "name": "dori",
   "version-string": "0.1.0",
   "dependencies": [
-    "boost-align"
+    "boost-align",
+    "boost-mp11"
   ]
 }
