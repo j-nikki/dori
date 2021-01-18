@@ -466,6 +466,29 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
         return erase(pos, std::next(pos));
     }
 
+  private:
+    template <class T, class U, std::size_t... Js>
+    constexpr DORI_inline void
+    Emplace(T *p, U &&t, std::index_sequence<Js...>) noexcept(
+        std::is_same_v<std::tuple<T &&>, U>)
+    {
+        static_assert(
+            std::is_constructible_v<T, mp_at_c<std::decay_t<U>, Js> &&...>,
+            "elements not constructible with parameters to emplace()");
+        if constexpr (!std::is_same_v<std::tuple<T &&>, U>) {
+            try {
+                Al_tr::construct(al_, p, std::get<Js>(static_cast<U &&>(t))...);
+            } catch (...) {
+                Destroy_to(p, sz_ - 1);
+                --sz_;
+                throw;
+            }
+        } else
+            Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, p,
+                              std::get<0>(static_cast<U &&>(t)));
+    }
+
+  public:
     template <Tuple... Us>
     requires(sizeof...(Ts) == sizeof...(Us)) //
         constexpr DORI_inline iterator
@@ -473,27 +496,13 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
             (... && std::is_same_v<Us, std::tuple<Ts &&>>))
     {
         DORI_assert(sz_ < cap_);
-        std::tuple<Us &&...> fwd{static_cast<Us &&>(xs)...};
+        using Fwd = std::tuple<Us &&...>;
+        Fwd fwd{static_cast<Us &&>(xs)...};
         const auto off = sz_++;
-        (..., ([&]<class T, class U, std::size_t... Js>(
-                  T * p, U && t, std::index_sequence<Js...>) {
-             using D = std::decay_t<U>;
-             static_assert(
-                 std::is_constructible_v<T, mp_at_c<D, Js> &&...>,
-                 "elements not constructible with parameters to emplace()");
-             try {
-                 Call_maybe_unsafe(std::is_same<std::tuple<T &&>, D>{},
-                                   DORI_f_ref(Al_tr::construct), al_, p,
-                                   std::get<Js>(static_cast<U &&>(t))...);
-             } catch (...) {
-                 Destroy_to(p, off);
-                 --sz_;
-                 throw;
-             }
-         }(Get_data<Is>() + off,
-              std::get<Redir[Is]>(static_cast<std::tuple<Us &&...> &&>(fwd)),
-              std::make_index_sequence<
-                  std::tuple_size_v<mp_at_c<mp_list<Us...>, Redir[Is]>>>{})));
+        (..., Emplace(Get_data<Is>() + off,
+                      std::get<Redir[Is]>(static_cast<Fwd &&>(fwd)),
+                      mp_rename<std::decay_t<mp_at_c<Fwd, Redir[Is]>>,
+                                std::index_sequence_for>{}));
         return Iter_at(off);
     }
 
