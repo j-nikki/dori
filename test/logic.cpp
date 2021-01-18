@@ -376,14 +376,14 @@ TEST_SUITE("dori::vector")
             struct Al : A {
                 using A::A;
                 using is_always_equal = true_type;
-                using value_type      = char;
+                using value_type      = std::byte;
                 bool operator==(const Al &) const { return true; }
                 bool operator!=(const Al &) const { return false; }
-                char *allocate(size_t n)
+                std::byte *allocate(size_t n)
                 {
                     allocations += n;
                     DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_BEGIN
-                    return new char[n];
+                    return new std::byte[n];
                     DORI_VECTOR_TEST_EXPLICIT_NEW_AND_DELETE_END
                 }
                 void deallocate(void *p, size_t n) noexcept
@@ -459,10 +459,10 @@ TEST_SUITE("dori::vector")
                     using propagate_on_container_move_assignment = Al_pocma;
                     using propagate_on_container_swap            = Al_pocs;
                     using is_always_equal                        = Al_iae;
-                    using value_type                             = char;
+                    using value_type                             = std::byte;
                     bool operator==(const Al &) const { return Eq::value; }
                     bool operator!=(const Al &) const { return !Eq::value; }
-                    char *allocate(size_t) { throw std::bad_alloc{}; }
+                    std::byte *allocate(size_t) { throw std::bad_alloc{}; }
                     void deallocate(void *, size_t) { throw std::bad_alloc{}; }
                 };
                 {

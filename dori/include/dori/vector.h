@@ -598,13 +598,15 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
 
 template <class L>
 using Default_allocator = boost::alignment::aligned_allocator<
-    char, mp_max_element<mp_transform<std::alignment_of, L>, mp_less>::value>;
+    std::byte,
+    mp_max_element<mp_transform<std::alignment_of, L>, mp_less>::value>;
 
 template <class L>
-using Deduce_vec = mp_rename<
-    std::conditional_t<Allocator<char, mp_back<L>>, mp_rotate_right_c<L, 1>,
-                       mp_push_front<L, Default_allocator<L>>>,
-    vector_al>;
+using Deduce_vec =
+    mp_rename<std::conditional_t<Allocator<std::byte, mp_back<L>>,
+                                 mp_rotate_right_c<L, 1>,
+                                 mp_push_front<L, Default_allocator<L>>>,
+              vector_al>;
 
 } // namespace detail
 

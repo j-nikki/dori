@@ -25,7 +25,7 @@ namespace dori::detail
 template <class Allocator>
 struct opaque_vector {
     DORI_no_unique_address Allocator al_;
-    char *p_         = nullptr;
+    std::byte *p_    = nullptr;
     std::size_t sz_  = 0;
     std::size_t cap_ = 0;
 };
