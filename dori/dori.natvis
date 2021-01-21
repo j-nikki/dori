@@ -11,9 +11,9 @@
 	print(LF.join(f'''	<Type Name="dori::vector_al&lt;*{',*'*i}&gt;">
 			<DisplayString>{{{{ size={{sz_}}, capacity={{cap_}} }}}}</DisplayString>
 			<Expand>
-	{LF.join(f'			<Item Name="[{j}]">($T{j+2}*)(p_+({"+".join(f"sizeof($T{k+2})" for k in range(j)) if j else "0"})*cap_),[sz_]na</Item>' for j in range(i))}
+	{LF.join(f'			<Item Name="[{j}]">($T{j+2}*)(p_ + Natvis_hint_{j} * cap_),[sz_]na</Item>' for j in range(i))}
 			</Expand>
-		</Type>''' for i in range(1,10)))
+		</Type>''' for i in range(1,11)))
 	```
 
 -->
@@ -21,91 +21,106 @@
 	<Type Name="dori::vector_al&lt;*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
-			<Item Name="[4]">($T6*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
-			<Item Name="[4]">($T6*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5))*cap_),[sz_]na</Item>
-			<Item Name="[5]">($T7*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
+			<Item Name="[5]">($T7*)(p_ + Natvis_hint_5 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
-			<Item Name="[4]">($T6*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5))*cap_),[sz_]na</Item>
-			<Item Name="[5]">($T7*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6))*cap_),[sz_]na</Item>
-			<Item Name="[6]">($T8*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
+			<Item Name="[5]">($T7*)(p_ + Natvis_hint_5 * cap_),[sz_]na</Item>
+			<Item Name="[6]">($T8*)(p_ + Natvis_hint_6 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
-			<Item Name="[4]">($T6*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5))*cap_),[sz_]na</Item>
-			<Item Name="[5]">($T7*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6))*cap_),[sz_]na</Item>
-			<Item Name="[6]">($T8*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7))*cap_),[sz_]na</Item>
-			<Item Name="[7]">($T9*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7)+sizeof($T8))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
+			<Item Name="[5]">($T7*)(p_ + Natvis_hint_5 * cap_),[sz_]na</Item>
+			<Item Name="[6]">($T8*)(p_ + Natvis_hint_6 * cap_),[sz_]na</Item>
+			<Item Name="[7]">($T9*)(p_ + Natvis_hint_7 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 	<Type Name="dori::vector_al&lt;*,*,*,*,*,*,*,*,*,*&gt;">
 		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
 		<Expand>
-			<Item Name="[0]">($T2*)(p_+(0)*cap_),[sz_]na</Item>
-			<Item Name="[1]">($T3*)(p_+(sizeof($T2))*cap_),[sz_]na</Item>
-			<Item Name="[2]">($T4*)(p_+(sizeof($T2)+sizeof($T3))*cap_),[sz_]na</Item>
-			<Item Name="[3]">($T5*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4))*cap_),[sz_]na</Item>
-			<Item Name="[4]">($T6*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5))*cap_),[sz_]na</Item>
-			<Item Name="[5]">($T7*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6))*cap_),[sz_]na</Item>
-			<Item Name="[6]">($T8*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7))*cap_),[sz_]na</Item>
-			<Item Name="[7]">($T9*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7)+sizeof($T8))*cap_),[sz_]na</Item>
-			<Item Name="[8]">($T10*)(p_+(sizeof($T2)+sizeof($T3)+sizeof($T4)+sizeof($T5)+sizeof($T6)+sizeof($T7)+sizeof($T8)+sizeof($T9))*cap_),[sz_]na</Item>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
+			<Item Name="[5]">($T7*)(p_ + Natvis_hint_5 * cap_),[sz_]na</Item>
+			<Item Name="[6]">($T8*)(p_ + Natvis_hint_6 * cap_),[sz_]na</Item>
+			<Item Name="[7]">($T9*)(p_ + Natvis_hint_7 * cap_),[sz_]na</Item>
+			<Item Name="[8]">($T10*)(p_ + Natvis_hint_8 * cap_),[sz_]na</Item>
+		</Expand>
+	</Type>
+	<Type Name="dori::vector_al&lt;*,*,*,*,*,*,*,*,*,*,*&gt;">
+		<DisplayString>{{ size={sz_}, capacity={cap_} }}</DisplayString>
+		<Expand>
+			<Item Name="[0]">($T2*)(p_ + Natvis_hint_0 * cap_),[sz_]na</Item>
+			<Item Name="[1]">($T3*)(p_ + Natvis_hint_1 * cap_),[sz_]na</Item>
+			<Item Name="[2]">($T4*)(p_ + Natvis_hint_2 * cap_),[sz_]na</Item>
+			<Item Name="[3]">($T5*)(p_ + Natvis_hint_3 * cap_),[sz_]na</Item>
+			<Item Name="[4]">($T6*)(p_ + Natvis_hint_4 * cap_),[sz_]na</Item>
+			<Item Name="[5]">($T7*)(p_ + Natvis_hint_5 * cap_),[sz_]na</Item>
+			<Item Name="[6]">($T8*)(p_ + Natvis_hint_6 * cap_),[sz_]na</Item>
+			<Item Name="[7]">($T9*)(p_ + Natvis_hint_7 * cap_),[sz_]na</Item>
+			<Item Name="[8]">($T10*)(p_ + Natvis_hint_8 * cap_),[sz_]na</Item>
+			<Item Name="[9]">($T11*)(p_ + Natvis_hint_9 * cap_),[sz_]na</Item>
 		</Expand>
 	</Type>
 </AutoVisualizer>

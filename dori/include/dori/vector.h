@@ -8,7 +8,9 @@
 #include "detail/vector_layout.h"
 
 #include <boost/mp11/algorithm.hpp>
+#include <boost/mp11/bind.hpp>
 #include <boost/mp11/list.hpp>
+#include <boost/preprocessor/repetition/repeat.hpp>
 #include <tuple>
 
 namespace dori
@@ -30,6 +32,10 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
 
     static constexpr inline auto Sz_all = (sizeof(Ts) + ...);
     static constexpr inline auto Align  = std::max({alignof(Ts)...});
+#define DORI_vector_natvis_hint(z, n, _)                                       \
+    static constexpr auto Natvis_hint_##n =                                    \
+        Offsets[Redir[n < sizeof...(Ts) ? n : 0]];
+    BOOST_PP_REPEAT(10, DORI_vector_natvis_hint, ~)
 
 #define DORI_vector_iterator_convop_refconv_and_ptrsty_const_iterator          \
     std::tuple<const TsSrt *...>
@@ -69,6 +75,9 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
     }
 
   public:
+    template <std::size_t I>
+    using Ith_sorted = mp_at_c<mp_list<TsSrt...>, I>;
+
     using value_type      = std::tuple<Ts...>;
     using reference       = std::tuple<Ts &...>;
     using const_reference = std::tuple<const Ts &...>;
@@ -168,7 +177,7 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
                         Al_tr::construct(al_, d_f, *f);
                 } catch (...) {
                     Destroy_to(d_f);
-                    sz_ = cap_ = 0;
+                    cap_ = 0;
                     Al_tr::deallocate(al_, p_, v.cap_ * Sz_all);
                     throw;
                 }
@@ -470,39 +479,45 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
     template <class T, class U, std::size_t... Js>
     constexpr DORI_inline void
     Emplace(T *p, U &&t, std::index_sequence<Js...>) noexcept(
-        std::is_same_v<std::tuple<T &&>, U>)
+        std::is_nothrow_constructible<T,
+                                      mp_at_c<std::decay_t<U>, Js>...>::value)
     {
         static_assert(
-            std::is_constructible_v<T, mp_at_c<std::decay_t<U>, Js> &&...>,
+            std::is_constructible_v<T, mp_at_c<std::decay_t<U>, Js>...>,
             "elements not constructible with parameters to emplace()");
-        if constexpr (!std::is_same_v<std::tuple<T &&>, U>) {
-            try {
-                Al_tr::construct(al_, p, std::get<Js>(static_cast<U &&>(t))...);
-            } catch (...) {
-                Destroy_to(p, sz_ - 1);
-                --sz_;
-                throw;
-            }
-        } else
-            Call_maybe_unsafe(DORI_f_ref(Al_tr::construct), al_, p,
-                              std::get<0>(static_cast<U &&>(t)));
+        Call_maybe_unsafe(
+            std::is_nothrow_constructible<T, mp_at_c<std::decay_t<U>, Js>...>{},
+            DORI_f_ref(Al_tr::construct), al_, p,
+            std::get<Js>(static_cast<U &&>(t))...);
     }
+
+    template <class... Us>
+    static constexpr inline auto Nothrow_emplace =
+        (... && mp_rename<mp_push_front<std::decay_t<Us>, Ts>,
+                          std::is_nothrow_constructible>::value);
 
   public:
     template <Tuple... Us>
     requires(sizeof...(Ts) == sizeof...(Us)) //
         constexpr DORI_inline iterator
-        emplace_back(std::piecewise_construct_t, Us &&...xs) noexcept(
-            (... && std::is_same_v<Us, std::tuple<Ts &&>>))
+        emplace_back(std::piecewise_construct_t,
+                     Us &&...xs) noexcept(Nothrow_emplace<Us...>)
     {
         DORI_assert(sz_ < cap_);
-        using Fwd = std::tuple<Us &&...>;
-        Fwd fwd{static_cast<Us &&>(xs)...};
         const auto off = sz_++;
-        (..., Emplace(Get_data<Is>() + off,
-                      std::get<Redir[Is]>(static_cast<Fwd &&>(fwd)),
-                      mp_rename<std::decay_t<mp_at_c<Fwd, Redir[Is]>>,
-                                std::index_sequence_for>{}));
+        void *p;
+        Try<Nothrow_emplace<Us...>>([&] {
+            using Fwd = std::tuple<Us &&...>;
+            Fwd fwd{static_cast<Us &&>(xs)...};
+            (...,
+             Emplace((p = Get_data<Is>() + off, reinterpret_cast<TsSrt *>(p)),
+                     std::get<Redir[Is]>(static_cast<Fwd &&>(fwd)),
+                     mp_rename<std::decay_t<mp_at_c<Fwd, Redir[Is]>>,
+                               std::index_sequence_for>{}));
+        })([&] {
+            Destroy_to(p, off);
+            throw;
+        });
         return Iter_at(off);
     }
 
@@ -560,7 +575,6 @@ class vector_impl<Al, mp_list<Ts...>, mp_list<TsSrt...>, Offsets, Redir, Is...>
                         Al_tr::construct(al_, f);
                 } catch (...) {
                     Destroy_to(f, off);
-                    sz_ = off;
                     throw;
                 }
             }(data<Is>() + off, data<Is>() + sz));

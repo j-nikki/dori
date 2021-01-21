@@ -53,6 +53,7 @@ struct Destroy_to_impl {
                     DORI_f_ref(std::allocator_traits<Al>::destroy), v.al_, it);
             return lt;
         }.template operator()<Ts>(Ns));
+        v.sz_ = f_idx;
     }
 };
 
