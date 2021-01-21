@@ -27,6 +27,14 @@ elseif(CMAKE_CXX_STANDARD LESS 20 OR NOT CMAKE_CXX_STANDARD_REQUIRED)
   message("dori uses C++20 features, reconsider the C++ standard settings")
 endif()
 
+# Include dori
+if(MSVC_IDE)
+  option(DORI_ADD_NATVIS "Use native visualizers (.natvis)" TRUE)
+else()
+  set(DORI_ADD_NATVIS
+      FALSE
+      CACHE INTERNAL "(.natvis not supported)" FORCE)
+endif()
 add_subdirectory("dori")
 
 # Optionally add tests
